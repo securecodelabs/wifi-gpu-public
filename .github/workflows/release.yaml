@@ -1,0 +1,92 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to release
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  checks:
+    name: Checks
+    uses: ./.github/workflows/ci.yaml # zizmor: ignore[self-repository] -- Same-commit reusable workflow; actionlint 1.7.12 does not support $/ yet.
+    with:
+      ref: ${{ format('refs/tags/{0}', inputs.tag || github.ref_name) }}
+  build:
+    name: Build
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-26.04
+            platform: linux-amd64
+          - os: windows-2022
+            platform: windows-amd64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ format('refs/tags/{0}', inputs.tag || github.ref_name) }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Build Linux
+        if: runner.os == 'Linux'
+        run: |
+          bash scripts/build-linux-release.sh
+          python scripts/package-release.py --tag "$RELEASE_TAG" --platform "$PLATFORM" --binary build-linux-release/wifi-gpu
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        run: |
+          cmake -S . -B build-release -A x64
+          cmake --build build-release --config Release --parallel 2
+          python scripts/package-release.py --tag "$RELEASE_TAG" --platform "$PLATFORM" --binary build-release/Release/wifi-gpu.exe
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.platform }}
+          path: dist/*
+          retention-days: 7
+          if-no-files-found: error
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # Publish tested release assets only.
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Publish only after all checks and both platform builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft > state.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("state.json"))["isDraft"], "Published releases are immutable"'
+          else
+            gh release create "$RELEASE_TAG" --draft --verify-tag --title "$RELEASE_TAG" --notes 'Tested Linux and Windows x86-64 executables, source provenance, and SHA-256 checksums. CI/security gates passed before publication.'
+          fi
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest

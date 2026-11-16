@@ -1,0 +1,12 @@
+# Shader checksums must survive a Windows checkout.
+kernels/*.comp text eol=lf
+kernels/*.sha256 text eol=lf
+kernels/*.json text eol=lf
+*.spv binary
+# Native Linux deployment scripts must remain executable by Bash after checkout.
+*.sh text eol=lf
+
+*.yaml text eol=lf
+Dockerfile* text eol=lf
+
+*.yml text eol=lf

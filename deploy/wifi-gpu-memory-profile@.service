@@ -1,0 +1,17 @@
+[Unit]
+Description=WiFi GPU tested RX 9060 XT stock memory profile (%I)
+Wants=systemd-udev-settle.service
+After=systemd-udev-settle.service
+Before=docker.service
+ConditionPathExists=/sys/bus/pci/devices/%I/pp_dpm_mclk
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/local/libexec/wifi-gpu/amd-memory-profile.py apply --device /sys/bus/pci/devices/%I
+ExecStop=/usr/bin/python3 /usr/local/libexec/wifi-gpu/amd-memory-profile.py restore --device /sys/bus/pci/devices/%I
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

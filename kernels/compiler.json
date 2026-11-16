@@ -1,0 +1,16 @@
+{
+    "compiler":  "Glslang Version: 11:16.6.0\r\nESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 16.6.0\r\nGLSL Version: 4.60 glslang Khronos. 16.6.0\r\nSPIR-V Version 0x00010600, Revision 1\r\nGLSL.std.450 Version 100, Revision 1\r\nKhronos Tool ID 8\r\nSPIR-V Generator Version 11\r\nGL_KHR_vulkan_glsl version 100\r\nARB_GL_gl_spirv version 100",
+    "compiler_sha256":  "ac9e632dfd235ace66cd55e427a2cd943c01d7992a806eabd01a872cbf9c5ff9",
+    "arguments":  [
+                      "-V",
+                      "--target-env",
+                      "vulkan1.0",
+                      "-Os",
+                      "--spirv-val",
+                      "--source-entrypoint",
+                      "main",
+                      "-e",
+                      "wifi_pbkdf2_v2"
+                  ],
+    "target":  "Vulkan 1.0 / SPIR-V 1.0"
+}

@@ -1,0 +1,4 @@
+# Exactly 10 uppercase hexadecimal characters (0-9, A-F).
+# Keyspace: 16^10 = 1,099,511,627,776 candidates.
+# Usage: --mask-file '.\masks\hex-uppercase-10.txt'
+?H?H?H?H?H?H?H?H?H?H

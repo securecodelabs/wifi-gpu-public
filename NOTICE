@@ -1,0 +1,6 @@
+wifi-gpu
+Copyright 2026 securecodelabs contributors
+
+This product includes Khronos OpenCL and Vulkan headers.
+The source tests include a public Hashcat self-test vector.
+See THIRD_PARTY_NOTICES.md and the accompanying license texts.

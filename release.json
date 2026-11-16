@@ -1,0 +1,24 @@
+{
+  "project": "wifi-gpu",
+  "files": {
+    "bin/kernels/pbkdf2.cl": "kernels/pbkdf2.cl",
+    "bin/kernels/pbkdf2.spv": "kernels/pbkdf2.spv",
+    "share/wifi-gpu/README.md": "README.md",
+    "share/wifi-gpu/amd-memory-profile.py": "scripts/amd-memory-profile.py",
+    "share/wifi-gpu/wifi-gpu-memory-profile@.service": "deploy/wifi-gpu-memory-profile@.service",
+    "share/wifi-gpu/LICENSE": "LICENSE",
+    "share/wifi-gpu/NOTICE": "NOTICE",
+    "share/wifi-gpu/THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+    "share/wifi-gpu/licenses/OpenCL-Headers.txt": "third_party/OpenCL-Headers/LICENSE",
+    "share/wifi-gpu/licenses/Vulkan-Headers.txt": "third_party/Vulkan-Headers/LICENSE.txt",
+    "share/wifi-gpu/licenses/hashcat.txt": "third_party/hashcat/LICENSE.txt",
+    "share/wifi-gpu/docs/linux.md": "docs/linux.md",
+    "share/wifi-gpu/docs/usage.md": "docs/usage.md",
+    "share/wifi-gpu/docs/benchmarks.md": "docs/benchmarks.md",
+    "share/wifi-gpu/docs/architecture.md": "docs/architecture.md",
+    "share/wifi-gpu/docs/amd-memory-profile.md": "docs/amd-memory-profile.md",
+    "share/wifi-gpu/CONTRIBUTING.md": "CONTRIBUTING.md",
+    "share/wifi-gpu/SECURITY.md": "SECURITY.md",
+    "share/wifi-gpu/masks/hex-uppercase-10.txt": "masks/hex-uppercase-10.txt"
+  }
+}

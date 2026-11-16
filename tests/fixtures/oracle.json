@@ -1,0 +1,5 @@
+{
+  "generator": "make_fixtures.py (hashlib/hmac and independently checked AES-CMAC)",
+  "password_hex": "6c6162706173733432",
+  "record_count": 37
+}

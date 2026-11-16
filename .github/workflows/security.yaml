@@ -1,0 +1,41 @@
+name: Security and lint
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ''
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}-${{ inputs.ref }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    name: Audit
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install pinned linters
+        run: python -m pip install -r .github/requirements-ci.txt
+      - name: Workflow, Python security, and secret checks
+        run: python scripts/ci_security.py
+      - name: Retain redacted audit evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-reports
+          path: ci-reports/
+          retention-days: 14
+          if-no-files-found: ignore

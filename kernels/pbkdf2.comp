@@ -1,0 +1,261 @@
+#version 450
+#extension GL_EXT_control_flow_attributes : require
+// Vulkan 1.0 / SPIR-V 1.0, uint32 arithmetic only. No subgroup or int8 features.
+// Entry point wifi_pbkdf2_v2 identifies the two-work-items-per-password ABI.
+// Specializations: 0 = local workgroup size, 1 = init/loop/finish phase.
+layout(local_size_x_id=0,local_size_y=1,local_size_z=1) in;
+layout(constant_id=1) const uint phase=0;
+struct Password { uint words[16]; uint length; };
+struct State { uint ipad[5]; uint opad[5]; uint u[5]; uint sum[5]; };
+layout(std430,set=0,binding=0) readonly buffer Passwords { Password passwords[]; };
+layout(std430,set=0,binding=1) readonly buffer Salt { uint salt[8]; };
+layout(std430,set=0,binding=2) buffer States { State states[]; };
+layout(std430,set=0,binding=3) writeonly buffer Output { uint pmks[]; };
+layout(push_constant) uniform Parameters { uint count; uint ssid_len; uint rounds; } p;
+
+uint rol(uint a,uint n) { return (a<<n)|(a>>(32u-n)); }
+void sha1_initial(out uint s[5]) {
+    s[0]=0x67452301u; s[1]=0xefcdab89u; s[2]=0x98badcfeu;
+    s[3]=0x10325476u; s[4]=0xc3d2e1f0u;
+}
+void sha1_block(inout uint s[5],inout uint w[16]) {
+    uint a=s[0],b=s[1],c=s[2],d=s[3],e=s[4];
+    [[unroll]] for(uint i=0;i<80;++i) {
+        if(i>=16) w[i&15]=rol(w[(i-3)&15]^w[(i-8)&15]^w[(i-14)&15]^w[i&15],1u);
+        uint f,k;
+        if(i<20) { f=(b&c)|(~b&d); k=0x5a827999u; }
+        else if(i<40) { f=b^c^d; k=0x6ed9eba1u; }
+        else if(i<60) { f=(b&c)|(b&d)|(c&d); k=0x8f1bbcdcu; }
+        else { f=b^c^d; k=0xca62c1d6u; }
+        uint t=rol(a,5u)+f+e+k+w[i&15];
+        e=d; d=c; c=rol(b,30u); b=a; a=t;
+    }
+    s[0]+=a; s[1]+=b; s[2]+=c; s[3]+=d; s[4]+=e;
+}
+void finish_hmac(in uint opad[5],inout uint digest[5]) {
+    uint w[16],outer[5];
+    for(uint i=0;i<16;++i) w[i]=0;
+    for(uint i=0;i<5;++i) { w[i]=digest[i]; outer[i]=opad[i]; }
+    w[5]=0x80000000u; w[15]=672u;
+    sha1_block(outer,w); digest=outer;
+}
+struct Digest { uint a; uint b; uint c; uint d; uint e; };
+// SHA-1 compression of exactly 20 bytes following a 64-byte HMAC pad.
+// Fixed padding and scalar schedule avoid dynamically indexed private arrays.
+// BEGIN GENERATED SHA1_20
+Digest sha1_20(Digest base,Digest input_digest) {
+    uint a=base.a,b=base.b,c=base.c,d=base.d,e=base.e;
+    uint w0=input_digest.a;
+    uint w1=input_digest.b;
+    uint w2=input_digest.c;
+    uint w3=input_digest.d;
+    uint w4=input_digest.e;
+    uint w5=0x80000000u;
+    uint w6=0u;
+    uint w7=0u;
+    uint w8=0u;
+    uint w9=0u;
+    uint w10=0u;
+    uint w11=0u;
+    uint w12=0u;
+    uint w13=0u;
+    uint w14=0u;
+    uint w15=672u;
+    e+=rol(a,5u)+((b&c)|(~b&d))+0x5a827999u+w0; b=rol(b,30u);
+    d+=rol(e,5u)+((a&b)|(~a&c))+0x5a827999u+w1; a=rol(a,30u);
+    c+=rol(d,5u)+((e&a)|(~e&b))+0x5a827999u+w2; e=rol(e,30u);
+    b+=rol(c,5u)+((d&e)|(~d&a))+0x5a827999u+w3; d=rol(d,30u);
+    a+=rol(b,5u)+((c&d)|(~c&e))+0x5a827999u+w4; c=rol(c,30u);
+    e+=rol(a,5u)+((b&c)|(~b&d))+0x5a827999u+w5; b=rol(b,30u);
+    d+=rol(e,5u)+((a&b)|(~a&c))+0x5a827999u+w6; a=rol(a,30u);
+    c+=rol(d,5u)+((e&a)|(~e&b))+0x5a827999u+w7; e=rol(e,30u);
+    b+=rol(c,5u)+((d&e)|(~d&a))+0x5a827999u+w8; d=rol(d,30u);
+    a+=rol(b,5u)+((c&d)|(~c&e))+0x5a827999u+w9; c=rol(c,30u);
+    e+=rol(a,5u)+((b&c)|(~b&d))+0x5a827999u+w10; b=rol(b,30u);
+    d+=rol(e,5u)+((a&b)|(~a&c))+0x5a827999u+w11; a=rol(a,30u);
+    c+=rol(d,5u)+((e&a)|(~e&b))+0x5a827999u+w12; e=rol(e,30u);
+    b+=rol(c,5u)+((d&e)|(~d&a))+0x5a827999u+w13; d=rol(d,30u);
+    a+=rol(b,5u)+((c&d)|(~c&e))+0x5a827999u+w14; c=rol(c,30u);
+    e+=rol(a,5u)+((b&c)|(~b&d))+0x5a827999u+w15; b=rol(b,30u);
+    w0=rol(w13^w8^w2^w0,1u);
+    d+=rol(e,5u)+((a&b)|(~a&c))+0x5a827999u+w0; a=rol(a,30u);
+    w1=rol(w14^w9^w3^w1,1u);
+    c+=rol(d,5u)+((e&a)|(~e&b))+0x5a827999u+w1; e=rol(e,30u);
+    w2=rol(w15^w10^w4^w2,1u);
+    b+=rol(c,5u)+((d&e)|(~d&a))+0x5a827999u+w2; d=rol(d,30u);
+    w3=rol(w0^w11^w5^w3,1u);
+    a+=rol(b,5u)+((c&d)|(~c&e))+0x5a827999u+w3; c=rol(c,30u);
+    w4=rol(w1^w12^w6^w4,1u);
+    e+=rol(a,5u)+(b^c^d)+0x6ed9eba1u+w4; b=rol(b,30u);
+    w5=rol(w2^w13^w7^w5,1u);
+    d+=rol(e,5u)+(a^b^c)+0x6ed9eba1u+w5; a=rol(a,30u);
+    w6=rol(w3^w14^w8^w6,1u);
+    c+=rol(d,5u)+(e^a^b)+0x6ed9eba1u+w6; e=rol(e,30u);
+    w7=rol(w4^w15^w9^w7,1u);
+    b+=rol(c,5u)+(d^e^a)+0x6ed9eba1u+w7; d=rol(d,30u);
+    w8=rol(w5^w0^w10^w8,1u);
+    a+=rol(b,5u)+(c^d^e)+0x6ed9eba1u+w8; c=rol(c,30u);
+    w9=rol(w6^w1^w11^w9,1u);
+    e+=rol(a,5u)+(b^c^d)+0x6ed9eba1u+w9; b=rol(b,30u);
+    w10=rol(w7^w2^w12^w10,1u);
+    d+=rol(e,5u)+(a^b^c)+0x6ed9eba1u+w10; a=rol(a,30u);
+    w11=rol(w8^w3^w13^w11,1u);
+    c+=rol(d,5u)+(e^a^b)+0x6ed9eba1u+w11; e=rol(e,30u);
+    w12=rol(w9^w4^w14^w12,1u);
+    b+=rol(c,5u)+(d^e^a)+0x6ed9eba1u+w12; d=rol(d,30u);
+    w13=rol(w10^w5^w15^w13,1u);
+    a+=rol(b,5u)+(c^d^e)+0x6ed9eba1u+w13; c=rol(c,30u);
+    w14=rol(w11^w6^w0^w14,1u);
+    e+=rol(a,5u)+(b^c^d)+0x6ed9eba1u+w14; b=rol(b,30u);
+    w15=rol(w12^w7^w1^w15,1u);
+    d+=rol(e,5u)+(a^b^c)+0x6ed9eba1u+w15; a=rol(a,30u);
+    w0=rol(w13^w8^w2^w0,1u);
+    c+=rol(d,5u)+(e^a^b)+0x6ed9eba1u+w0; e=rol(e,30u);
+    w1=rol(w14^w9^w3^w1,1u);
+    b+=rol(c,5u)+(d^e^a)+0x6ed9eba1u+w1; d=rol(d,30u);
+    w2=rol(w15^w10^w4^w2,1u);
+    a+=rol(b,5u)+(c^d^e)+0x6ed9eba1u+w2; c=rol(c,30u);
+    w3=rol(w0^w11^w5^w3,1u);
+    e+=rol(a,5u)+(b^c^d)+0x6ed9eba1u+w3; b=rol(b,30u);
+    w4=rol(w1^w12^w6^w4,1u);
+    d+=rol(e,5u)+(a^b^c)+0x6ed9eba1u+w4; a=rol(a,30u);
+    w5=rol(w2^w13^w7^w5,1u);
+    c+=rol(d,5u)+(e^a^b)+0x6ed9eba1u+w5; e=rol(e,30u);
+    w6=rol(w3^w14^w8^w6,1u);
+    b+=rol(c,5u)+(d^e^a)+0x6ed9eba1u+w6; d=rol(d,30u);
+    w7=rol(w4^w15^w9^w7,1u);
+    a+=rol(b,5u)+(c^d^e)+0x6ed9eba1u+w7; c=rol(c,30u);
+    w8=rol(w5^w0^w10^w8,1u);
+    e+=rol(a,5u)+((b&c)|(b&d)|(c&d))+0x8f1bbcdcu+w8; b=rol(b,30u);
+    w9=rol(w6^w1^w11^w9,1u);
+    d+=rol(e,5u)+((a&b)|(a&c)|(b&c))+0x8f1bbcdcu+w9; a=rol(a,30u);
+    w10=rol(w7^w2^w12^w10,1u);
+    c+=rol(d,5u)+((e&a)|(e&b)|(a&b))+0x8f1bbcdcu+w10; e=rol(e,30u);
+    w11=rol(w8^w3^w13^w11,1u);
+    b+=rol(c,5u)+((d&e)|(d&a)|(e&a))+0x8f1bbcdcu+w11; d=rol(d,30u);
+    w12=rol(w9^w4^w14^w12,1u);
+    a+=rol(b,5u)+((c&d)|(c&e)|(d&e))+0x8f1bbcdcu+w12; c=rol(c,30u);
+    w13=rol(w10^w5^w15^w13,1u);
+    e+=rol(a,5u)+((b&c)|(b&d)|(c&d))+0x8f1bbcdcu+w13; b=rol(b,30u);
+    w14=rol(w11^w6^w0^w14,1u);
+    d+=rol(e,5u)+((a&b)|(a&c)|(b&c))+0x8f1bbcdcu+w14; a=rol(a,30u);
+    w15=rol(w12^w7^w1^w15,1u);
+    c+=rol(d,5u)+((e&a)|(e&b)|(a&b))+0x8f1bbcdcu+w15; e=rol(e,30u);
+    w0=rol(w13^w8^w2^w0,1u);
+    b+=rol(c,5u)+((d&e)|(d&a)|(e&a))+0x8f1bbcdcu+w0; d=rol(d,30u);
+    w1=rol(w14^w9^w3^w1,1u);
+    a+=rol(b,5u)+((c&d)|(c&e)|(d&e))+0x8f1bbcdcu+w1; c=rol(c,30u);
+    w2=rol(w15^w10^w4^w2,1u);
+    e+=rol(a,5u)+((b&c)|(b&d)|(c&d))+0x8f1bbcdcu+w2; b=rol(b,30u);
+    w3=rol(w0^w11^w5^w3,1u);
+    d+=rol(e,5u)+((a&b)|(a&c)|(b&c))+0x8f1bbcdcu+w3; a=rol(a,30u);
+    w4=rol(w1^w12^w6^w4,1u);
+    c+=rol(d,5u)+((e&a)|(e&b)|(a&b))+0x8f1bbcdcu+w4; e=rol(e,30u);
+    w5=rol(w2^w13^w7^w5,1u);
+    b+=rol(c,5u)+((d&e)|(d&a)|(e&a))+0x8f1bbcdcu+w5; d=rol(d,30u);
+    w6=rol(w3^w14^w8^w6,1u);
+    a+=rol(b,5u)+((c&d)|(c&e)|(d&e))+0x8f1bbcdcu+w6; c=rol(c,30u);
+    w7=rol(w4^w15^w9^w7,1u);
+    e+=rol(a,5u)+((b&c)|(b&d)|(c&d))+0x8f1bbcdcu+w7; b=rol(b,30u);
+    w8=rol(w5^w0^w10^w8,1u);
+    d+=rol(e,5u)+((a&b)|(a&c)|(b&c))+0x8f1bbcdcu+w8; a=rol(a,30u);
+    w9=rol(w6^w1^w11^w9,1u);
+    c+=rol(d,5u)+((e&a)|(e&b)|(a&b))+0x8f1bbcdcu+w9; e=rol(e,30u);
+    w10=rol(w7^w2^w12^w10,1u);
+    b+=rol(c,5u)+((d&e)|(d&a)|(e&a))+0x8f1bbcdcu+w10; d=rol(d,30u);
+    w11=rol(w8^w3^w13^w11,1u);
+    a+=rol(b,5u)+((c&d)|(c&e)|(d&e))+0x8f1bbcdcu+w11; c=rol(c,30u);
+    w12=rol(w9^w4^w14^w12,1u);
+    e+=rol(a,5u)+(b^c^d)+0xca62c1d6u+w12; b=rol(b,30u);
+    w13=rol(w10^w5^w15^w13,1u);
+    d+=rol(e,5u)+(a^b^c)+0xca62c1d6u+w13; a=rol(a,30u);
+    w14=rol(w11^w6^w0^w14,1u);
+    c+=rol(d,5u)+(e^a^b)+0xca62c1d6u+w14; e=rol(e,30u);
+    w15=rol(w12^w7^w1^w15,1u);
+    b+=rol(c,5u)+(d^e^a)+0xca62c1d6u+w15; d=rol(d,30u);
+    w0=rol(w13^w8^w2^w0,1u);
+    a+=rol(b,5u)+(c^d^e)+0xca62c1d6u+w0; c=rol(c,30u);
+    w1=rol(w14^w9^w3^w1,1u);
+    e+=rol(a,5u)+(b^c^d)+0xca62c1d6u+w1; b=rol(b,30u);
+    w2=rol(w15^w10^w4^w2,1u);
+    d+=rol(e,5u)+(a^b^c)+0xca62c1d6u+w2; a=rol(a,30u);
+    w3=rol(w0^w11^w5^w3,1u);
+    c+=rol(d,5u)+(e^a^b)+0xca62c1d6u+w3; e=rol(e,30u);
+    w4=rol(w1^w12^w6^w4,1u);
+    b+=rol(c,5u)+(d^e^a)+0xca62c1d6u+w4; d=rol(d,30u);
+    w5=rol(w2^w13^w7^w5,1u);
+    a+=rol(b,5u)+(c^d^e)+0xca62c1d6u+w5; c=rol(c,30u);
+    w6=rol(w3^w14^w8^w6,1u);
+    e+=rol(a,5u)+(b^c^d)+0xca62c1d6u+w6; b=rol(b,30u);
+    w7=rol(w4^w15^w9^w7,1u);
+    d+=rol(e,5u)+(a^b^c)+0xca62c1d6u+w7; a=rol(a,30u);
+    w8=rol(w5^w0^w10^w8,1u);
+    c+=rol(d,5u)+(e^a^b)+0xca62c1d6u+w8; e=rol(e,30u);
+    w9=rol(w6^w1^w11^w9,1u);
+    b+=rol(c,5u)+(d^e^a)+0xca62c1d6u+w9; d=rol(d,30u);
+    w10=rol(w7^w2^w12^w10,1u);
+    a+=rol(b,5u)+(c^d^e)+0xca62c1d6u+w10; c=rol(c,30u);
+    w11=rol(w8^w3^w13^w11,1u);
+    e+=rol(a,5u)+(b^c^d)+0xca62c1d6u+w11; b=rol(b,30u);
+    w12=rol(w9^w4^w14^w12,1u);
+    d+=rol(e,5u)+(a^b^c)+0xca62c1d6u+w12; a=rol(a,30u);
+    w13=rol(w10^w5^w15^w13,1u);
+    c+=rol(d,5u)+(e^a^b)+0xca62c1d6u+w13; e=rol(e,30u);
+    w14=rol(w11^w6^w0^w14,1u);
+    b+=rol(c,5u)+(d^e^a)+0xca62c1d6u+w14; d=rol(d,30u);
+    w15=rol(w12^w7^w1^w15,1u);
+    a+=rol(b,5u)+(c^d^e)+0xca62c1d6u+w15; c=rol(c,30u);
+    return Digest(a+base.a,b+base.b,c+base.c,d+base.d,e+base.e);
+}
+// END GENERATED SHA1_20
+
+// Two independent work items derive PBKDF2 blocks 1 and 2 for each password.
+// Only the first three words of block 2 are emitted, giving a full 32-byte PMK.
+void main() {
+    uint id=gl_GlobalInvocationID.x;
+    if(id>=p.count*2u) return;
+    uint candidate=id>>1, block=id&1u;
+    if(phase==0) {
+        State s; uint w[16];
+        sha1_initial(s.ipad); sha1_initial(s.opad);
+        for(uint i=0;i<16;++i) w[i]=passwords[candidate].words[i]^0x36363636u;
+        sha1_block(s.ipad,w);
+        for(uint i=0;i<16;++i) w[i]=passwords[candidate].words[i]^0x5c5c5c5cu;
+        sha1_block(s.opad,w);
+        for(uint i=0;i<16;++i) w[i]=i<8 ? salt[i] : 0;
+        uint last=p.ssid_len+3u;
+        w[last>>2] |= (block+1u)<<(24u-8u*(last&3));
+        uint pad=p.ssid_len+4u;
+        w[pad>>2] |= 0x80u<<(24u-8u*(pad&3));
+        w[15]=(64u+p.ssid_len+4u)*8u;
+        s.u=s.ipad; sha1_block(s.u,w); finish_hmac(s.opad,s.u);
+        s.sum=s.u; states[id]=s;
+    } else if(phase==1) {
+        Digest ip=Digest(states[id].ipad[0],states[id].ipad[1],states[id].ipad[2],states[id].ipad[3],states[id].ipad[4]);
+        Digest op=Digest(states[id].opad[0],states[id].opad[1],states[id].opad[2],states[id].opad[3],states[id].opad[4]);
+        Digest u=Digest(states[id].u[0],states[id].u[1],states[id].u[2],states[id].u[3],states[id].u[4]);
+        Digest acc=Digest(states[id].sum[0],states[id].sum[1],states[id].sum[2],states[id].sum[3],states[id].sum[4]);
+        // Reuse one compression body for inner and outer HMAC instead of
+        // duplicating it in the compiled instruction stream.
+        // Rotate the pad states instead of selecting all five base words on
+        // every step. Each complete HMAC restores their original order.
+        [[dont_unroll]] for(uint step=0;step<p.rounds*2u;++step) {
+            bool outer=(step&1u)!=0;
+            u=sha1_20(ip,u);
+            Digest temp=ip; ip=op; op=temp;
+            if(outer) { acc.a^=u.a; acc.b^=u.b; acc.c^=u.c; acc.d^=u.d; acc.e^=u.e; }
+        }
+        states[id].u[0]=u.a;
+        states[id].u[1]=u.b;
+        states[id].u[2]=u.c;
+        states[id].u[3]=u.d;
+        states[id].u[4]=u.e;
+        states[id].sum[0]=acc.a;
+        states[id].sum[1]=acc.b;
+        states[id].sum[2]=acc.c;
+        states[id].sum[3]=acc.d;
+        states[id].sum[4]=acc.e;
+    } else {
+        for(uint i=0;i<(block==0?5u:3u);++i) pmks[candidate*8+block*5+i]=states[id].sum[i];
+    }
+}
