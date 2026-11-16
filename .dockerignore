@@ -3,6 +3,14 @@
 !CMakeLists.txt
 !release.json
 !README.md
+!CONTRIBUTING.md
+!SECURITY.md
+!docs/
+!docs/**
+!deploy/
+!deploy/**
+!masks/
+!masks/**
 !LICENSE
 !NOTICE
 !THIRD_PARTY_NOTICES.md
