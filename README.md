@@ -1,7 +1,7 @@
 # wifi-gpu
 
 A Windows and Linux command-line tool for recovering passwords from HC22000
-records, with HIP, OpenCL, Vulkan, and CPU backends. Version **0.14.0**.
+records, with HIP, OpenCL, Vulkan, and CPU backends. Version **0.14.1**.
 Use it with networks and data you own or have permission to audit.
 
 The engine supports streamed wordlists, masks, hybrid wordlist/mask searches,
@@ -98,7 +98,7 @@ python tests/test_opencl_batches.py --exe ./build/wifi-gpu --backend hip
 ```
 
 On one Radeon RX 9060 XT / ROCm 7.2 setup, prior synthetic complete-recovery
-measurements were approximately 656–657 kH/s at stock settings. These are
+measurements were approximately 656â€“657 kH/s at stock settings. These are
 hardware-specific observations, not a performance guarantee. See
 [benchmark methodology and reproduction](docs/benchmarks.md).
 An optional [RX 9060 XT memory profile](docs/amd-memory-profile.md) measured a
