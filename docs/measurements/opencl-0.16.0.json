@@ -1,0 +1,327 @@
+{
+  "date": "2026-11-17",
+  "gpu": "AMD Radeon RX 9060 XT (gfx1200), 16 GiB",
+  "runtime": "OpenCL driver 3581.0; Ubuntu rocm-opencl-icd 7.1.0 with deployed ROCm 7.2 libraries",
+  "compiler": "GCC 13.3.0, CMake Release, same SDK for baseline and candidate",
+  "power_policy": "Unchanged manual policy, memory 456 MHz, power cap 175 W",
+  "method": "Regression over central 20-80% of observer-clock completed-candidate progress; three alternating runs per engine/workload",
+  "workload": "One absent synthetic exact-nonce WPA2 EAPOL v2 target; ten-character uppercase hexadecimal candidates",
+  "settings": {
+    "batch": 262144,
+    "group": 64,
+    "baseline_chunk": 256,
+    "selected_chunk": 512
+  },
+  "kernel_sha256": "28faa7197da48d4d4d7174af5de6d11dde82b5c63d73e775da5e78441c3b5ecf",
+  "positive_controls": {
+    "count": 4,
+    "all_passed": true
+  },
+  "summary": {
+    "mask": {
+      "baseline-opencl": {
+        "median": 623551.5790364722,
+        "min": 623378.833287113,
+        "max": 625707.171341278,
+        "native_median": 622124.864332,
+        "process_median": 617662.6548619446,
+        "gpu_busy_mean": 97.14426610994289
+      },
+      "opencl": {
+        "median": 655802.1158600425,
+        "min": 653148.376016655,
+        "max": 656631.564452972,
+        "native_median": 654323.742479,
+        "process_median": 649839.1359638106,
+        "gpu_busy_mean": 98.84366497369854
+      },
+      "gain_percent": 5.172072031860564
+    },
+    "wordlist": {
+      "baseline-opencl": {
+        "median": 631930.4723352498,
+        "min": 630673.5272210803,
+        "max": 632109.103472185,
+        "native_median": 630330.221471,
+        "process_median": 606493.6667661916,
+        "gpu_busy_mean": 98.04112554112554
+      },
+      "opencl": {
+        "median": 653968.7894707222,
+        "min": 653828.48085496,
+        "max": 656239.8263915164,
+        "native_median": 652658.392022,
+        "process_median": 626813.5093584608,
+        "gpu_busy_mean": 98.79217854217855
+      },
+      "gain_percent": 3.4874591589216353
+    }
+  },
+  "measurements": [
+    {
+      "variant": "baseline-opencl",
+      "workload": "mask",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 625707.171341278,
+      "native_rate": 624759.463861,
+      "process_rate": 621102.2434033228,
+      "process_seconds": 27.012003544004983,
+      "native_search_seconds": 26.853881,
+      "measured_window_seconds": 15.915571789999376,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 97.17684887459806,
+      "temperature_max_c": 49.0,
+      "sensor_means": {
+        "freq1_input": 3144855305.466238,
+        "freq2_input": 456000000,
+        "power1_average": 168736334.4051447
+      },
+      "round": 1
+    },
+    {
+      "variant": "baseline-opencl",
+      "workload": "mask",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 623551.5790364722,
+      "native_rate": 622124.864332,
+      "process_rate": 617662.6548619446,
+      "process_seconds": 27.162425747999805,
+      "native_search_seconds": 26.967602,
+      "measured_window_seconds": 15.980735076998826,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 97.11217948717949,
+      "temperature_max_c": 52.0,
+      "sensor_means": {
+        "freq1_input": 3129121794.8717947,
+        "freq2_input": 456000000,
+        "power1_average": 168804487.17948717
+      },
+      "round": 2
+    },
+    {
+      "variant": "baseline-opencl",
+      "workload": "mask",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 623378.833287113,
+      "native_rate": 621736.435176,
+      "process_rate": 616976.1237718618,
+      "process_seconds": 27.192650336990482,
+      "native_search_seconds": 26.98445,
+      "measured_window_seconds": 15.976997516001575,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 97.14376996805112,
+      "temperature_max_c": 53.0,
+      "sensor_means": {
+        "freq1_input": 3129380191.6932907,
+        "freq2_input": 456000000,
+        "power1_average": 169284345.04792333
+      },
+      "round": 3
+    },
+    {
+      "variant": "opencl",
+      "workload": "mask",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 656631.564452972,
+      "native_rate": 655001.581446,
+      "process_rate": 650528.6117708129,
+      "process_seconds": 25.790127746004146,
+      "native_search_seconds": 25.614008,
+      "measured_window_seconds": 15.167649216993595,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 98.79391891891892,
+      "temperature_max_c": 50.0,
+      "sensor_means": {
+        "freq1_input": 3184935810.810811,
+        "freq2_input": 456000000,
+        "power1_average": 173716216.2162162
+      },
+      "round": 1
+    },
+    {
+      "variant": "opencl",
+      "workload": "mask",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 655802.1158600425,
+      "native_rate": 654323.742479,
+      "process_rate": 649839.1359638106,
+      "process_seconds": 25.817490931993234,
+      "native_search_seconds": 25.640543,
+      "measured_window_seconds": 15.19057901200722,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 98.82432432432432,
+      "temperature_max_c": 52.0,
+      "sensor_means": {
+        "freq1_input": 3180256756.756757,
+        "freq2_input": 456000000,
+        "power1_average": 173695945.94594595
+      },
+      "round": 2
+    },
+    {
+      "variant": "opencl",
+      "workload": "mask",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 653148.376016655,
+      "native_rate": 652058.746991,
+      "process_rate": 647414.2618521717,
+      "process_seconds": 25.914189705988974,
+      "native_search_seconds": 25.729608,
+      "measured_window_seconds": 15.245081204993767,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 98.91275167785236,
+      "temperature_max_c": 53.0,
+      "sensor_means": {
+        "freq1_input": 3167912751.677852,
+        "freq2_input": 456000000,
+        "power1_average": 173731543.62416106
+      },
+      "round": 3
+    },
+    {
+      "variant": "baseline-opencl",
+      "workload": "wordlist",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 632109.103472185,
+      "native_rate": 630957.964992,
+      "process_rate": 606546.4187485572,
+      "process_seconds": 27.660234206996392,
+      "native_search_seconds": 26.590069,
+      "measured_window_seconds": 15.754531661004876,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 98.01298701298701,
+      "temperature_max_c": 52.0,
+      "sensor_means": {
+        "freq1_input": 3163178571.428571,
+        "freq2_input": 456000000,
+        "power1_average": 172256493.5064935
+      },
+      "round": 1
+    },
+    {
+      "variant": "baseline-opencl",
+      "workload": "wordlist",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 631930.4723352498,
+      "native_rate": 630330.221471,
+      "process_rate": 606493.6667661916,
+      "process_seconds": 27.66264005600533,
+      "native_search_seconds": 26.61655,
+      "measured_window_seconds": 15.763242604007246,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 98.10064935064935,
+      "temperature_max_c": 53.0,
+      "sensor_means": {
+        "freq1_input": 3159146103.896104,
+        "freq2_input": 456000000,
+        "power1_average": 172448051.94805196
+      },
+      "round": 2
+    },
+    {
+      "variant": "baseline-opencl",
+      "workload": "wordlist",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 630673.5272210803,
+      "native_rate": 629131.919817,
+      "process_rate": 605014.1880353774,
+      "process_seconds": 27.730285226003616,
+      "native_search_seconds": 26.667247,
+      "measured_window_seconds": 15.794056055994588,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 98.00974025974025,
+      "temperature_max_c": 54.0,
+      "sensor_means": {
+        "freq1_input": 3154876623.376623,
+        "freq2_input": 456000000,
+        "power1_average": 172321428.57142857
+      },
+      "round": 3
+    },
+    {
+      "variant": "opencl",
+      "workload": "wordlist",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 656239.8263915164,
+      "native_rate": 654670.148185,
+      "process_rate": 628629.3095062051,
+      "process_seconds": 26.68856788300036,
+      "native_search_seconds": 25.626976,
+      "measured_window_seconds": 15.17746587000147,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 98.83108108108108,
+      "temperature_max_c": 51.0,
+      "sensor_means": {
+        "freq1_input": 3182304054.0540543,
+        "freq2_input": 456000000,
+        "power1_average": 173753378.3783784
+      },
+      "round": 1
+    },
+    {
+      "variant": "opencl",
+      "workload": "wordlist",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 653828.48085496,
+      "native_rate": 652658.392022,
+      "process_rate": 626350.5798900938,
+      "process_seconds": 26.785663713992108,
+      "native_search_seconds": 25.705968,
+      "measured_window_seconds": 15.231340320009622,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 98.68350168350169,
+      "temperature_max_c": 53.0,
+      "sensor_means": {
+        "freq1_input": 3173548821.5488214,
+        "freq2_input": 456000000,
+        "power1_average": 173690235.6902357
+      },
+      "round": 2
+    },
+    {
+      "variant": "opencl",
+      "workload": "wordlist",
+      "requested_candidates": 16777216,
+      "completed_candidates": 16777216,
+      "recovered": 0,
+      "sustained_rate": 653968.7894707222,
+      "native_rate": 652531.120146,
+      "process_rate": 626813.5093584608,
+      "process_seconds": 26.765881317987805,
+      "native_search_seconds": 25.710982,
+      "measured_window_seconds": 15.229880137994769,
+      "measured_progress_samples": 39,
+      "gpu_busy_mean_percent": 98.86195286195286,
+      "temperature_max_c": 53.0,
+      "sensor_means": {
+        "freq1_input": 3170296296.296296,
+        "freq2_input": 456000000,
+        "power1_average": 173885521.8855219
+      },
+      "round": 3
+    }
+  ],
+  "note": "Sanitized development-build results with the same compute source as v0.16.0. Private commit IDs, local paths and operational archives are omitted."
+}

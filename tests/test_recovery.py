@@ -275,11 +275,11 @@ def main():
         # Public upstream mode-22000 self-test and our converter's exported data.
         public = root/'fixtures/hashcat-public.hc22000'
         recover(public, ['--mask', 'hashcat!'])
-        if not args.cpu_only and args.backend=='vulkan':
+        if not args.cpu_only and args.backend in ('vulkan','opencl'):
             recover(one, ['--mask', 'labpass42', '--chunk', '1024'])
         # Check backend-specific ceilings in either option order, before any
         # device is opened. This also runs on hosts without HIP or OpenCL.
-        for backend,limit in (('vulkan',1024),('opencl',256),('hip',256)):
+        for backend,limit in (('vulkan',1024),('opencl',1024),('hip',256)):
             for options in (['--chunk',str(limit+1),'--backend',backend],
                             ['--backend',backend,'--chunk',str(limit+1)]):
                 run(['benchmark',*options],1)

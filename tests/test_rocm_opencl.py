@@ -91,7 +91,7 @@ class RocmTests(unittest.TestCase):
 
     def test_invalid_limits_are_rejected_before_runtime_access(self):
         for options in (['--device', '-1'], ['--batch', '262145'], ['--group', '0'],
-                        ['--chunk', '257'], ['--repeats', '0'], ['--limit', '1024']):
+                        ['--chunk', '1025'], ['--repeats', '0'], ['--limit', '1024']):
             with self.subTest(options=options), \
                     patch.object(rocm.platform, 'system', return_value='Linux'), \
                     patch.object(rocm.os, 'geteuid', return_value=1000, create=True), \

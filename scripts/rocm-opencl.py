@@ -140,7 +140,7 @@ def main(argv=None):
     if os.geteuid() == 0:
         parser.error('Run as the normal GPU job user so device permissions are checked.')
     if not (args.device >= 0 and 1 <= args.batch <= 262144 and 1 <= args.group <= 256
-            and 1 <= args.chunk <= 256 and 1 <= args.repeats <= 10
+            and 1 <= args.chunk <= 1024 and 1 <= args.repeats <= 10
             and args.batch <= args.limit <= 16777216):
         parser.error('Invalid device/batch/group/chunk/repeats/limit; limit must cover a full batch.')
     exe, icd = args.exe.expanduser().resolve(), args.icd.expanduser().resolve()

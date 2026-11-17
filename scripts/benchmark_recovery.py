@@ -26,7 +26,7 @@ def main():
     if not 1 <= args.repeats <= 10 or not 1 <= args.limit <= 1000000:
         parser.error('repeats must be 1..10; limit must be 1..1000000')
     max_batch = 262144
-    max_chunk = 1024 if args.backend == 'vulkan' else 256
+    max_chunk = 256 if args.backend == 'hip' else 1024
     if not (1 <= args.batch <= max_batch and 1 <= args.group <= 256 and 1 <= args.chunk <= max_chunk):
         parser.error(f'batch must be 1..{max_batch}; group must be 1..256; chunk must be 1..{max_chunk}')
     project = Path(__file__).resolve().parent.parent
