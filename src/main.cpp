@@ -62,16 +62,17 @@ Options options(int argc,char** argv) {
         else if(key=="--device") o.device=n;
         else if(key=="--batch") { if(n<1 || n>wifi::gpu_batch_limit(wifi::Backend::OpenCl)) throw std::invalid_argument("--batch must be 1..262144"); o.batch=n; }
         else if(key=="--group") { if(n<1 || n>256) throw std::invalid_argument("--group must be 1..256"); o.group=n; }
-        else if(key=="--chunk") { if(n<1 || n>256) throw std::invalid_argument("--chunk must be 1..256"); o.chunk=static_cast<std::uint32_t>(n); }
+        else if(key=="--chunk") { if(n<1 || n>wifi::gpu_chunk_limit(wifi::Backend::Vulkan)) throw std::invalid_argument("--chunk must be 1..1024 (Vulkan) or 1..256 (OpenCL/HIP)"); o.chunk=static_cast<std::uint32_t>(n); }
         else if(key=="--repeats") { if(n<1 || n>10) throw std::invalid_argument("--repeats must be 1..10"); o.repeats=n; }
     }
     if(o.cpu_only && (used.count("--backend") || used.count("--device") || used.count("--kernel") || used.count("--group") || used.count("--chunk")))
         throw std::invalid_argument("CPU mode cannot be combined with GPU options");
     if(used.count("--threads") && !o.cpu_only) throw std::invalid_argument("--threads requires --cpu");
+    if(o.chunk>wifi::gpu_chunk_limit(o.backend)) throw std::invalid_argument("--chunk exceeds backend limit (Vulkan: 1024; OpenCL/HIP: 256)");
     if(o.allow_software && (o.cpu_only || o.backend!=wifi::Backend::Vulkan)) throw std::invalid_argument("--allow-software-vulkan requires Vulkan mode");
     if(!used.count("--batch") && !o.cpu_only && o.backend==wifi::Backend::Hip) o.batch=262144;
     if(o.batch>(o.cpu_only ? 4096 : wifi::gpu_batch_limit(o.backend)))
-        throw std::invalid_argument("--batch exceeds backend limit (OpenCL/HIP: 262144; CPU/Vulkan: 4096)");
+        throw std::invalid_argument("--batch exceeds backend limit (GPU: 262144; CPU: 4096)");
     return o;
 }
 std::string source(const Options& o) {
@@ -227,7 +228,7 @@ void gpu_tests(wifi::Gpu& gpu,Tests& tests,wifi::Backend backend) {
     auto compare=[&](const std::vector<Bytes>& passwords,const Bytes& ssid,unsigned iterations,unsigned chunk,std::size_t group) {
         auto got=gpu.derive(passwords,ssid,iterations,chunk,group);
         tests.check(got.pmks.size()==passwords.size(),"output count");
-        const auto dispatches=(backend!=Backend::Vulkan && passwords.size()>4096) ?
+        const auto dispatches=passwords.size()>4096 ?
             2+iterations-1 : 2+(iterations-1+chunk-1)/chunk;
         tests.check(got.submissions>=2 && got.submissions<=dispatches,"bounded GPU submission count");
         tests.check(got.max_submission_ms>=got.max_launch_ms && got.gpu_ms>=got.max_submission_ms,
@@ -249,6 +250,13 @@ void gpu_tests(wifi::Gpu& gpu,Tests& tests,wifi::Backend backend) {
         Bytes ssid(n); for(unsigned i=0;i<n;++i) ssid[i]=static_cast<std::uint8_t>(i*19);
         compare(lengths,ssid,4096,255,64);
     }
+    // Change the batch maximum across every packed-key word boundary, then
+    // shrink to an empty key on the same engine. Mixed shorter keys must keep
+    // their zero padding even when the previous batch used a wider stride.
+    if(backend==Backend::Vulkan) {
+        for(std::size_t n=64;n-- >0;)
+            compare({lengths[n],Bytes(n/2,0),Bytes{}},Bytes{0,255},17,8,3);
+    }
     const std::vector<Bytes> few={bytes("12345678"),bytes(std::string(63,'x')),Bytes{'a',0,'b',255}};
     // Exhaust small loop/chunk combinations against the independent reference:
     // rotated HMAC pad state must restart correctly at every dispatch boundary.
@@ -265,7 +273,14 @@ void gpu_tests(wifi::Gpu& gpu,Tests& tests,wifi::Backend backend) {
         for(std::size_t i=0;i<count;++i) p.push_back(bytes("testpass-"+std::to_string(i)));
         compare(p,bytes("SSID"),17,8,64);
     }
-    if(backend!=Backend::Vulkan) {
+    if(backend==Backend::Vulkan) {
+        for(unsigned chunk:{257U,511U,512U,1024U})
+            compare(few,bytes("Long chunks"),4096,chunk,64);
+        std::vector<Bytes> wider(4097,bytes("long-chunk-password"));
+        wider.front()=Bytes(63,255); wider.back()=Bytes{};
+        compare(wider,Bytes{0,255},1025,1024,128);
+    }
+    {
         for(std::size_t count:{4097U,8193U,65536U,262144U}) {
             std::vector<Bytes> p;
             for(std::size_t i=0;i<count;++i) p.push_back(bytes("large-batch-"+std::to_string(i)));
@@ -291,7 +306,7 @@ void gpu_tests(wifi::Gpu& gpu,Tests& tests,wifi::Backend backend) {
     tests.rejects([&]{gpu.derive({pass},ssid,0);},"zero GPU iterations");
     tests.rejects([&]{gpu.derive({pass},ssid,4097);},"large GPU iterations");
     tests.rejects([&]{gpu.derive({pass},ssid,1,0);},"zero GPU chunk");
-    tests.rejects([&]{gpu.derive({pass},ssid,1,257);},"large GPU chunk");
+    tests.rejects([&]{gpu.derive({pass},ssid,1,gpu_chunk_limit(backend)+1);},"large GPU chunk");
     tests.rejects([&]{gpu.derive({pass},ssid,1,128,0);},"zero work group");
     tests.rejects([&]{gpu.derive({pass},ssid,1,128,65536);},"large work group");
     gpu_filter_tests(gpu,tests);
@@ -346,7 +361,7 @@ int run_main(int argc,char** argv) {
             std::cout<<"wifi-gpu "<<version<<" - HC22000 recovery for Windows/Linux, CPU/OpenCL/Vulkan/HIP\n"
                 <<"  devices [--backend opencl|vulkan|hip]\n  selftest [--cpu-only | --device N] [--kernel PATH]\n"
                 <<"  benchmark [--cpu [--threads 1..64] | --device N] [--batch N] [--group 1..256]\n"
-                <<"            [--chunk 1..256] [--repeats 1..10] [--kernel PATH]\n"
+                <<"            [--chunk 1..1024 (Vulkan) / 1..256 (OpenCL/HIP)] [--repeats 1..10] [--kernel PATH]\n"
                 <<"  --version\n--allow-software-vulkan explicitly enables CPU Vulkan devices for testing.\nGPU indices start at 0 within each backend. Default: "<<wifi::backend_name(wifi::default_backend())<<".\n  selftest, benchmark and recover accept --backend opencl|vulkan|hip.\n  HIP requires a Linux build with ROCm 7.2.\n";
             wifi::recovery_help();
             return 0;

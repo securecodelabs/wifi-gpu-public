@@ -56,8 +56,10 @@ including source-loading progress and the latest tested candidate in hex; protec
 these logs too. Totals count valid candidates and may be null when unavailable.
 
 CPU mode accepts `--threads 1..64`. GPU mode accepts `--device`, `--batch`,
-`--group 1..256`, and `--chunk 1..256`. HIP defaults to batch 262144; other backends
-default to 1024. CPU/Vulkan batches stop at 4096; OpenCL/HIP stop at 262144.
+`--group 1..256`, and `--chunk` (Vulkan 1..1024; OpenCL/HIP 1..256). HIP
+defaults to batch 262144; other backends default to 1024. CPU batches stop at
+4096; every GPU backend supports up to 262144. Vulkan chunks above 256 opt
+into a longer adaptive submission target; see [Vulkan setup](vulkan.md).
 
 | Recovery exit code | Meaning |
 | --- | --- |

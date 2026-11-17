@@ -190,6 +190,29 @@ def hip_pair_compression():
     return '\n'.join(lines+['}'])+'\n'
 
 
+def vulkan_compression():
+    # RADV benefits from the same proved fixed-padding schedule as HIP, with
+    # one PBKDF2 block per invocation. Paired scalar/vector variants did not
+    # improve the measured throughput enough to justify extra live state.
+    text=hip_compression().replace(
+        'WIFI_DEVICE_INLINE void sha1_20(const uint base[5],uint digest[5])',
+        'Digest sha1_20(Digest base,Digest input_digest,uint first_round)')
+    for index,name in enumerate('abcde'):
+        text=text.replace(f'base[{index}]','base.'+name).replace(f'digest[{index}]','input_digest.'+name)
+    start=text.index('    input_digest.a=a+base.a;')
+    text=text[:start]+'    return Digest(a+base.a,b+base.b,c+base.c,d+base.d,e+base.e);\n}\n'
+    text=text.replace('rotate(', 'rol(')
+    # This sum depends only on the HMAC pad. Compute it once before the
+    # PBKDF2 loop instead of relying on the driver to hoist it from the call.
+    first='e=(e+w0+0x5a827999u)+(rol(a,5u)+SHA1_CH(b,c,d));'
+    assert text.count(first)==1
+    text=text.replace(first,'e=w0+first_round;')
+    prepare=('uint sha1_first_round(Digest base) {\n'
+             '    return base.e+0x5a827999u+rol(base.a,5u)+SHA1_CH(base.b,base.c,base.d);\n}\n')
+    return ('#define SHA1_CH(b,c,d) ((d)^((b)&((c)^(d))))\n'
+            '#define SHA1_MAJ(b,c,d) (((b)&(c))|((d)&((b)^(c))))\n'+prepare+text)
+
+
 def verify_hip_schedule():
     # SHA-1 expansion is affine for this fixed padding. Zero plus every input
     # basis bit proves all 80 words for every possible 160-bit HMAC digest.
@@ -248,7 +271,7 @@ def main():
     verify_amd_schedule()
     verify_hip_schedule()
     root=Path(__file__).resolve().parent.parent
-    for name,body in [('pbkdf2.comp',compression()),('pbkdf2.cl',opencl_compression())]:
+    for name,body in [('pbkdf2.comp',vulkan_compression()),('pbkdf2.cl',opencl_compression())]:
         path=root/'kernels'/name
         raw=path.read_bytes(); ending=b'\r\n' if b'\r\n' in raw else b'\n'
         text=raw.decode().replace('\r\n','\n')

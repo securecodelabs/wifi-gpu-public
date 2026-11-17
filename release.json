@@ -19,6 +19,9 @@
     "share/wifi-gpu/docs/amd-memory-profile.md": "docs/amd-memory-profile.md",
     "share/wifi-gpu/CONTRIBUTING.md": "CONTRIBUTING.md",
     "share/wifi-gpu/SECURITY.md": "SECURITY.md",
-    "share/wifi-gpu/masks/hex-uppercase-10.txt": "masks/hex-uppercase-10.txt"
+    "share/wifi-gpu/masks/hex-uppercase-10.txt": "masks/hex-uppercase-10.txt",
+    "share/wifi-gpu/docs/vulkan.md": "docs/vulkan.md",
+    "share/wifi-gpu/licenses/Mesa-NIR.txt": "third_party/mesa/LICENSE.txt",
+    "share/wifi-gpu/docs/measurements/vulkan-0.15.0.json": "docs/measurements/vulkan-0.15.0.json"
   }
 }

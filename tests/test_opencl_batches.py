@@ -11,7 +11,7 @@ import make_fixtures as oracle
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--exe', type=Path, required=True)
-    parser.add_argument('--backend', choices=('opencl','hip'), default='opencl')
+    parser.add_argument('--backend', choices=('opencl','hip','vulkan'), default='opencl')
     args = parser.parse_args()
     exe = args.exe.resolve()
     with tempfile.TemporaryDirectory(prefix='wifi-gpu-opencl-batches-') as temporary:
@@ -31,7 +31,7 @@ def main():
 
         # Check parsing after all options, including --batch before --backend.
         for options in (['--batch', '262145', '--backend', args.backend],
-                        ['--batch', '4097', '--backend', 'vulkan'],
+                        ['--batch', '262145', '--backend', 'vulkan'],
                         ['--batch', '4097', '--cpu'],
                         ['--backend', args.backend, '--batch', '0']):
             run(['benchmark', *options], 1)

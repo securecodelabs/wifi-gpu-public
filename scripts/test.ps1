@@ -7,7 +7,7 @@ if ($CpuOnly) { $arguments += '--cpu-only' } else { $arguments += @('--backend',
 & $exe @arguments
 if ($LASTEXITCODE -ne 0) { throw "Self-test failed: $LASTEXITCODE" }
 $invalid = @(
-    @('benchmark', '--batch', '0'), @('benchmark', '--batch', '4097'),
+    @('benchmark', '--batch', '0'), @('benchmark', '--batch', '262145'),
     @('benchmark', '--chunk', '0'), @('benchmark', '--chunk', '4294967297'),
     @('benchmark', '--repeats', '0'), @('benchmark', '--group', '0'),
     @('benchmark', '--device', '-1'), @('benchmark', '--repeats', '2oops'),

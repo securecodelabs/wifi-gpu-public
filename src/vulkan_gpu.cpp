@@ -162,7 +162,7 @@ struct Context {
     VkQueryPool queries=VK_NULL_HANDLE;
     PFN_vkGetPipelineExecutablePropertiesKHR executable_properties=nullptr;
     PFN_vkGetPipelineExecutableStatisticsKHR executable_statistics=nullptr;
-    std::map<std::size_t,std::array<VkPipeline,3>> pipelines;
+    std::map<std::size_t,std::array<VkPipeline,4>> pipelines;
     #define DECLARE(n) PFN_##n n=nullptr;
     DEVICE_FUNCTIONS(DECLARE)
     #undef DECLARE
@@ -263,6 +263,7 @@ struct Context {
         for(auto& value:pipeline_properties) value.sType=VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR;
         check(executable_properties(device,&info,&n,pipeline_properties.data()),"executable properties");
         for(std::uint32_t i=0;i<n;++i) {
+            std::cerr<<"VULKAN_STATS phase="<<phase<<" group="<<group<<" subgroup_size="<<pipeline_properties[i].subgroupSize<<"\n";
             VkPipelineExecutableInfoKHR ei{}; ei.sType=VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR;
             ei.pipeline=p; ei.executableIndex=i;
             std::uint32_t count=0; check(executable_statistics(device,&ei,&count,nullptr),"executable statistics(count)");
@@ -283,11 +284,11 @@ struct Context {
             }
         }
     }
-    const std::array<VkPipeline,3>& pipeline(std::size_t group) {
+    const std::array<VkPipeline,4>& pipeline(std::size_t group) {
         auto found=pipelines.find(group); if(found!=pipelines.end()) return found->second;
         auto& result=pipelines[group];
         try {
-            for(std::uint32_t phase=0;phase<3;++phase) {
+            for(std::uint32_t phase=0;phase<4;++phase) {
                 const std::uint32_t data[]={static_cast<std::uint32_t>(group),phase};
                 const VkSpecializationMapEntry entries[]={{0,0,4},{1,4,4}};
                 const VkSpecializationInfo spec{2,entries,sizeof(data),data};
@@ -295,7 +296,7 @@ struct Context {
                 if(runtime.stats) ci.flags|=VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
                 ci.layout=layout; ci.stage.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
                 ci.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT; ci.stage.module=shader;
-                ci.stage.pName="wifi_pbkdf2_v2"; ci.stage.pSpecializationInfo=&spec;
+                ci.stage.pName="wifi_pbkdf2_v4"; ci.stage.pSpecializationInfo=&spec;
                 check(vkCreateComputePipelines(device,VK_NULL_HANDLE,1,&ci,nullptr,&result[phase]),"vkCreateComputePipelines");
                 print_statistics(result[phase],phase,group);
             }
@@ -406,10 +407,12 @@ struct VulkanEngine final : GpuEngine {
         while(next<count) next*=2;
         // Allocate a replacement set before releasing old buffers. Mappings stay
         // valid across batches; the preceding submission always completed.
-        auto input=std::make_unique<Buffer>(*c,next*68,true);
-        auto salt=std::make_unique<Buffer>(*c,32,true);
+        auto input=std::make_unique<Buffer>(*c,next*64,true);
+        // Reuse the salt binding for the WPA2 tag, two PTK blocks, and up to
+        // 65 padded EAPOL blocks. Keep the Vulkan 1.0 minimum of four SSBOs.
+        auto salt=std::make_unique<Buffer>(*c,(4+32+65*16)*4,true);
         auto states=std::make_unique<Buffer>(*c,next*160,false);
-        auto output=std::make_unique<Buffer>(*c,next*32,true);
+        auto output=std::make_unique<Buffer>(*c,next*36,true);
         input_buffer=std::move(input); salt_buffer=std::move(salt);
         state_buffer=std::move(states); output_buffer=std::move(output);
         capacity=next;
@@ -427,19 +430,95 @@ struct VulkanEngine final : GpuEngine {
     VulkanEngine(std::size_t index,const std::vector<std::uint32_t>& words,bool allow_software) { c->setup(index,words,allow_software); }
     Device info() const override { return describe(c->runtime,c->physical); }
     Batch derive(const std::vector<Bytes>& passwords,const Bytes& ssid,std::uint32_t iterations,std::uint32_t chunk,std::size_t group) override {
-        if(passwords.empty() || passwords.size()>4096) throw std::invalid_argument("Batch must contain 1..4096 passwords");
+        return derive_impl(passwords,ssid,iterations,chunk,group,true);
+    }
+    Pmk read_pmk(std::size_t index) const {
+        const auto* words=static_cast<const std::uint32_t*>(output_buffer->mapped)+index*8;
+        Pmk pmk{};
+        for(std::size_t j=0;j<pmk.size();++j) pmk[j]=static_cast<std::uint8_t>(words[j/4]>>(24-8*(j%4)));
+        return pmk;
+    }
+    void validate_filter(std::size_t count,const Bytes& context,const Bytes& eapol,const Bytes& mic,std::size_t group) const {
+        if(!count || count>gpu_batch_limit(Backend::Vulkan) || context.size()!=76 ||
+           eapol.size()<99 || eapol.size()>4096 || mic.size()!=16 || !group || group>info().max_work_group)
+            throw std::invalid_argument("Invalid WPA2 GPU filter input");
+        if((count*2+group-1)/group>c->properties.limits.maxComputeWorkGroupCount[0])
+            throw std::invalid_argument("Dispatch exceeds Vulkan device limit");
+    }
+    Bytes filter_buffer(std::size_t count,const Bytes& context,const Bytes& eapol,const Bytes& mic,std::size_t group) {
+        auto padded=[](Bytes message) {
+            const auto bits=static_cast<std::uint64_t>(64+message.size())*8;
+            message.push_back(0x80);
+            while(message.size()%64!=56) message.push_back(0);
+            for(int shift=56;shift>=0;shift-=8) message.push_back(static_cast<std::uint8_t>(bits>>shift));
+            return message;
+        };
+        auto ptk=bytes("Pairwise key expansion"); ptk.push_back(0);
+        ptk.insert(ptk.end(),context.begin(),context.end()); ptk.push_back(0);
+        ptk=padded(std::move(ptk));
+        const auto message=padded(eapol);
+        Bytes data=mic; data.insert(data.end(),ptk.begin(),ptk.end());
+        data.insert(data.end(),message.begin(),message.end());
+        std::vector<std::uint32_t> words(data.size()/4);
+        for(std::size_t i=0;i<data.size();++i) words[i/4]|=std::uint32_t(data[i])<<(24-8*(i%4));
+        std::memcpy(salt_buffer->mapped,words.data(),words.size()*sizeof(words[0])); salt_buffer->visibility(true);
+        const auto measured=c->launch(c->pipeline(group)[3],static_cast<std::uint32_t>(count),
+            static_cast<std::uint32_t>(message.size()/64),0,group,true,1);
+        const double budget=c->properties.deviceType==VK_PHYSICAL_DEVICE_TYPE_CPU ? 30000.0 : 250.0;
+        if(measured[0]>budget) throw std::runtime_error("Verification kernel exceeded Vulkan submission budget");
+        output_buffer->visibility(false);
+        const auto* out=static_cast<const std::uint32_t*>(output_buffer->mapped);
+        Bytes flags(count);
+        for(std::size_t i=0;i<count;++i) flags[i]=out[count*8+i]!=0;
+        return flags;
+    }
+    std::optional<Bytes> filter_wpa2(const std::vector<Pmk>& pmks,const Bytes& context,
+        const Bytes& eapol,const Bytes& mic,std::size_t group) override {
+        validate_filter(pmks.size(),context,eapol,mic,group);
+        reserve(pmks.size());
+        auto* out=static_cast<std::uint32_t*>(output_buffer->mapped);
+        for(std::size_t i=0;i<pmks.size();++i) for(std::size_t word=0;word<8;++word) {
+            std::uint32_t value=0;
+            for(std::size_t byte=0;byte<4;++byte) value|=std::uint32_t(pmks[i][word*4+byte])<<(24-8*byte);
+            out[i*8+word]=value;
+        }
+        output_buffer->visibility(true);
+        return filter_buffer(pmks.size(),context,eapol,mic,group);
+    }
+    std::optional<FilteredBatch> derive_wpa2(const std::vector<Bytes>& passwords,const Bytes& ssid,
+        const Bytes& context,const Bytes& eapol,const Bytes& mic,std::uint32_t chunk,std::size_t group) override {
+        validate_filter(passwords.size(),context,eapol,mic,group);
+        derive_impl(passwords,ssid,4096,chunk,group,false);
+        const auto flags=filter_buffer(passwords.size(),context,eapol,mic,group);
+        FilteredBatch result{passwords.size(),{}};
+        for(std::size_t i=0;i<flags.size();++i) if(flags[i]) result.hits.push_back({i,read_pmk(i)});
+        return result;
+    }
+    Batch derive_impl(const std::vector<Bytes>& passwords,const Bytes& ssid,std::uint32_t iterations,std::uint32_t chunk,std::size_t group,bool readback) {
+        if(passwords.empty() || passwords.size()>gpu_batch_limit(Backend::Vulkan)) throw std::invalid_argument("Batch must contain 1..262144 passwords");
         if(ssid.size()>32) throw std::invalid_argument("SSID exceeds 32 bytes");
         if(iterations==0 || iterations>4096) throw std::invalid_argument("Iterations must be 1..4096");
-        if(chunk==0 || chunk>256) throw std::invalid_argument("Chunk must be 1..256 rounds");
+        if(chunk==0 || chunk>gpu_chunk_limit(Backend::Vulkan)) throw std::invalid_argument("Chunk must be 1..1024 rounds");
         if(!group || group>info().max_work_group) throw std::invalid_argument("Work group exceeds kernel/device limit or is zero");
         if((passwords.size()*2+group-1)/group>c->properties.limits.maxComputeWorkGroupCount[0]) throw std::invalid_argument("Dispatch exceeds Vulkan device limit");
-        struct Password { std::uint32_t words[16]{}; std::uint32_t length=0; };
-        static_assert(sizeof(Password)==68,"std430 password stride");
-        std::vector<Password> packed(passwords.size());
+        // Transfer only the longest key's occupied words. The init shader
+        // supplies the rest of the 64-byte HMAC key block as zeroes.
+        std::size_t word_count=1;
+        for(const auto& password:passwords) {
+            if(password.size()>63) throw std::invalid_argument("Password exceeds 63 bytes");
+            word_count=std::max(word_count,(password.size()+3)/4);
+        }
+        std::vector<std::uint32_t> packed(passwords.size()*word_count,0);
         for(std::size_t i=0;i<passwords.size();++i) {
-            if(passwords[i].size()>63) throw std::invalid_argument("Password exceeds 63 bytes");
-            packed[i].length=static_cast<std::uint32_t>(passwords[i].size());
-            for(std::size_t j=0;j<passwords[i].size();++j) packed[i].words[j/4]|=std::uint32_t(passwords[i][j])<<(24-8*(j%4));
+            const auto& password=passwords[i];
+            auto* destination=packed.data()+i*word_count;
+            std::size_t j=0;
+            for(;j+4<=password.size();j+=4)
+                destination[j/4]=(std::uint32_t(password[j])<<24)|(std::uint32_t(password[j+1])<<16)|
+                                  (std::uint32_t(password[j+2])<<8)|password[j+3];
+            std::uint32_t tail=0;
+            for(std::size_t k=0;j+k<password.size();++k) tail|=std::uint32_t(password[j+k])<<(24-8*k);
+            if(j<password.size()) destination[j/4]=tail;
         }
         const auto start=std::chrono::steady_clock::now();
         const auto& pipelines=c->pipeline(group);
@@ -447,17 +526,21 @@ struct VulkanEngine final : GpuEngine {
         auto& input=*input_buffer; auto& salt=*salt_buffer; auto& output=*output_buffer;
         std::array<std::uint32_t,8> salt_words{};
         for(std::size_t i=0;i<ssid.size();++i) salt_words[i/4]|=std::uint32_t(ssid[i])<<(24-8*(i%4));
-        std::memcpy(input.mapped,packed.data(),packed.size()*sizeof(Password)); input.visibility(true);
+        std::memcpy(input.mapped,packed.data(),packed.size()*sizeof(std::uint32_t)); input.visibility(true);
         std::memcpy(salt.mapped,salt_words.data(),32); salt.visibility(true);
         Batch result;
-        double slowest_loop_ms=0;
+        double slowest_round_ms=0;
+        // Longer chunks are explicit opt-in. Keep the existing 50 ms target
+        // for ordinary settings, and retain the independent 250 ms hard bound.
+        const double target_ms=chunk>256 ? 100.0 : 50.0;
+        const auto probe=chunk>256 ? 32u : 8u;
         auto run=[&](unsigned phase,std::uint32_t rounds,unsigned repeats=1) {
             const auto measured=c->launch(pipelines[phase],static_cast<std::uint32_t>(passwords.size()),static_cast<std::uint32_t>(ssid.size()),rounds,group,phase==2,repeats);
             double submission_ms=0;
             for(auto ms:measured) {
                 submission_ms+=ms;
                 result.max_launch_ms=std::max(result.max_launch_ms,ms);
-                if(phase==1) slowest_loop_ms=std::max(slowest_loop_ms,ms);
+                if(phase==1) slowest_round_ms=std::max(slowest_round_ms,ms/rounds);
             }
             result.gpu_ms+=submission_ms;
             result.max_submission_ms=std::max(result.max_submission_ms,submission_ms);
@@ -466,21 +549,26 @@ struct VulkanEngine final : GpuEngine {
             const double budget_ms=c->properties.deviceType==VK_PHYSICAL_DEVICE_TYPE_CPU ? 30000.0 : 250.0;
             if(submission_ms>budget_ms) throw std::runtime_error("Vulkan submission exceeded "+std::to_string(budget_ms)+" ms budget; reduce --batch or --chunk");
         };
-        run(0,0);
+        run(0,static_cast<std::uint32_t>(word_count));
         for(std::uint32_t done=1;done<iterations;) {
-            const auto rounds=std::min(chunk,iterations-done);
+            // Probe large batches before scaling toward the submission target.
+            auto bounded_chunk=chunk;
+            if(passwords.size()>4096 && slowest_round_ms==0) bounded_chunk=std::min(chunk,probe);
+            if(passwords.size()>4096 && slowest_round_ms>0) bounded_chunk=static_cast<std::uint32_t>(std::clamp(target_ms/slowest_round_ms,1.0,static_cast<double>(chunk)));
+            const auto rounds=std::min(bounded_chunk,iterations-done);
             // Measure the first loop alone. Then amortize CPU/driver waits while
-            // targeting 50 ms of measured work and at most 16 dispatches.
+            // targeting bounded measured work and at most 16 dispatches.
             unsigned repeats=1;
-            if(slowest_loop_ms>0) repeats=static_cast<unsigned>(std::clamp(50.0/slowest_loop_ms,1.0,static_cast<double>(max_loop_dispatches)));
+            if(slowest_round_ms>0) repeats=static_cast<unsigned>(std::clamp(target_ms/(slowest_round_ms*rounds),1.0,static_cast<double>(max_loop_dispatches)));
             repeats=std::min(repeats,(iterations-done)/rounds);
             run(1,rounds,repeats); done+=rounds*repeats;
         }
-        run(2,0); output.visibility(false);
-        result.pmks.resize(passwords.size());
-        const auto* out=static_cast<const std::uint32_t*>(output.mapped);
-        for(std::size_t i=0;i<passwords.size();++i) for(std::size_t j=0;j<32;++j)
-            result.pmks[i][j]=static_cast<std::uint8_t>(out[i*8+j/4]>>(24-8*(j%4)));
+        run(2,0);
+        if(readback) {
+            output.visibility(false);
+            result.pmks.resize(passwords.size());
+            for(std::size_t i=0;i<passwords.size();++i) result.pmks[i]=read_pmk(i);
+        }
         result.wall_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
         return result;
     }
@@ -505,11 +593,11 @@ std::vector<std::uint32_t> validate_vulkan_shader(const std::string& code) {
             const auto* end=static_cast<const char*>(std::memchr(name,0,(count-3)*4));
             if(!end) throw std::invalid_argument("Unterminated SPIR-V entry point");
             if(words[pos+1]==5 && words[pos+2] && words[pos+2]<words[3] &&
-               std::string(name,static_cast<std::size_t>(end-name))=="wifi_pbkdf2_v2") compatible=true;
+               std::string(name,static_cast<std::size_t>(end-name))=="wifi_pbkdf2_v4") compatible=true;
         }
         pos+=count;
     }
-    if(!compatible) throw std::invalid_argument("Vulkan kernel ABI mismatch: expected wifi_pbkdf2_v2; update kernels/pbkdf2.spv with the executable");
+    if(!compatible) throw std::invalid_argument("Vulkan kernel ABI mismatch: expected wifi_pbkdf2_v4; update kernels/pbkdf2.spv with the executable");
     return words;
 }
 std::vector<Device> vulkan_devices(bool allow_software) {

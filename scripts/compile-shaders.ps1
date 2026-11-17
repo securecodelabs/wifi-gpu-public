@@ -13,7 +13,7 @@ $source = Join-Path $root 'kernels\pbkdf2.comp'
 $binary = Join-Path $root 'kernels\pbkdf2.spv'
 $temporary = "$binary.tmp.$PID"
 try {
-    & $Glslang -V --target-env vulkan1.0 -Os --spirv-val --source-entrypoint main -e wifi_pbkdf2_v2 -o $temporary $source
+    & $Glslang -V --target-env vulkan1.0 -Os --spirv-val --source-entrypoint main -e wifi_pbkdf2_v4 -o $temporary $source
     if ($LASTEXITCODE -ne 0) { throw 'Shader compilation/validation failed; existing binary retained.' }
     Move-Item -LiteralPath $temporary -Destination $binary -Force
 } finally {
@@ -34,7 +34,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot query shader compiler version.' }
 $manifest = [ordered]@{
     compiler = $version
     compiler_sha256 = Get-Sha256 $Glslang
-    arguments = @('-V','--target-env','vulkan1.0','-Os','--spirv-val','--source-entrypoint','main','-e','wifi_pbkdf2_v2')
+    arguments = @('-V','--target-env','vulkan1.0','-Os','--spirv-val','--source-entrypoint','main','-e','wifi_pbkdf2_v4')
     target = 'Vulkan 1.0 / SPIR-V 1.0'
 }
 [IO.File]::WriteAllText((Join-Path $root 'kernels\compiler.json'), ($manifest | ConvertTo-Json -Depth 5)+"`n", $utf8)

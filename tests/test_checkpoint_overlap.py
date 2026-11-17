@@ -17,7 +17,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--exe',type=Path,required=True)
     parser.add_argument('--shim',type=Path,required=True)
-    parser.add_argument('--backend',choices=('opencl','hip'),default='opencl')
+    parser.add_argument('--backend',choices=('opencl','hip','vulkan'),default='opencl')
     args=parser.parse_args()
     batch=8192;password=f'{batch*2+1:010X}'.encode()
     with tempfile.TemporaryDirectory(prefix='wifi-checkpoint-overlap-') as directory:

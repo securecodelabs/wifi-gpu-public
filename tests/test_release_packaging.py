@@ -27,6 +27,7 @@ class PackagingTests(unittest.TestCase):
             'licenses/OpenCL-Headers.txt': 'third_party/OpenCL-Headers/LICENSE',
             'licenses/Vulkan-Headers.txt': 'third_party/Vulkan-Headers/LICENSE.txt',
             'licenses/hashcat.txt': 'third_party/hashcat/LICENSE.txt',
+            'licenses/Mesa-NIR.txt': 'third_party/mesa/LICENSE.txt',
         }
         for destination, source in required.items():
             self.assertEqual(read('share/wifi-gpu/' + destination), (ROOT / source).read_bytes())

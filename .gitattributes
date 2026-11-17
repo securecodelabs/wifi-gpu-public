@@ -3,6 +3,8 @@ kernels/*.comp text eol=lf
 kernels/*.sha256 text eol=lf
 kernels/*.json text eol=lf
 *.spv binary
+third_party/mesa/*.patch text eol=lf whitespace=-blank-at-eol
+docs/measurements/*.json text eol=lf
 # Native Linux deployment scripts must remain executable by Bash after checkout.
 *.sh text eol=lf
 

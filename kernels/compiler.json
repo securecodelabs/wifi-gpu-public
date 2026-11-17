@@ -10,7 +10,7 @@
                       "--source-entrypoint",
                       "main",
                       "-e",
-                      "wifi_pbkdf2_v2"
+                      "wifi_pbkdf2_v4"
                   ],
     "target":  "Vulkan 1.0 / SPIR-V 1.0"
 }

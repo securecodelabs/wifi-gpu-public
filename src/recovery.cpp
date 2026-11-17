@@ -99,7 +99,8 @@ Config parse(int argc,char** argv) {
             unsigned max=0;
             if(key=="--threads") max=64;
             else if(key=="--batch") max=static_cast<unsigned>(gpu_batch_limit(Backend::OpenCl));
-            else if(key=="--group" || key=="--chunk") max=256;
+            else if(key=="--group") max=256;
+            else if(key=="--chunk") max=gpu_chunk_limit(Backend::Vulkan);
             else if(key=="--runtime") max=86400;
             else if(key=="--status-every") max=3600;
             else if(key=="--nonce-error-corrections") max=1024;
@@ -119,6 +120,7 @@ Config parse(int argc,char** argv) {
     if(c.resume && (used.count("--skip") || c.overwrite)) throw std::invalid_argument("--resume cannot be combined with --skip or --overwrite");
     if(c.cpu && (used.count("--backend") || used.count("--device") || used.count("--kernel") || used.count("--group") || used.count("--chunk"))) throw std::invalid_argument("GPU options cannot be combined with --cpu");
     if(used.count("--threads") && !c.cpu) throw std::invalid_argument("--threads requires --cpu");
+    if(c.chunk>gpu_chunk_limit(c.backend)) throw std::invalid_argument("--chunk exceeds backend limit (Vulkan: 1024; OpenCL/HIP: 256)");
     if(c.candidates.hexadecimal && c.candidates.wordlists.empty()) throw std::invalid_argument("--hex-wordlist requires --wordlist");
     if(used.count("--hybrid") && (c.candidates.wordlists.empty() || (c.candidates.masks.empty() && c.candidates.mask_files.empty()))) throw std::invalid_argument("--hybrid requires both a wordlist and a mask");
     if(c.command=="inspect") {
@@ -128,7 +130,7 @@ Config parse(int argc,char** argv) {
     if(c.allow_software && (c.cpu || c.backend!=Backend::Vulkan)) throw std::invalid_argument("--allow-software-vulkan requires Vulkan mode");
     if(!used.count("--batch") && !c.cpu && c.backend==Backend::Hip) c.batch=262144;
     if(c.batch>(c.cpu ? 4096 : gpu_batch_limit(c.backend)))
-        throw std::invalid_argument("--batch exceeds backend limit (OpenCL/HIP: 262144; CPU/Vulkan: 4096)");
+        throw std::invalid_argument("--batch exceeds backend limit (GPU: 262144; CPU: 4096)");
     if(c.hashes.empty()) throw std::invalid_argument("--hashes FILE is required");
     return c;
 }
@@ -306,9 +308,9 @@ int recover(const Config& c,std::vector<Record>& records,Input& hashes,std::size
         }
         passwords.resize(count); batch.end=candidates.position();
     };
-    // HIP mask recovery also benefits from preparing the next batch while
+    // HIP and Vulkan mask recovery benefit from preparing the next batch while
     // PBKDF2 runs. The saved batch end remains the only committed cursor.
-    const bool prefetch=gpu && (!c.candidates.wordlists.empty() || c.backend==Backend::Hip);
+    const bool prefetch=gpu && (!c.candidates.wordlists.empty() || c.backend==Backend::Hip || c.backend==Backend::Vulkan);
     std::size_t current=0;
     // Only the producer accesses the mutable candidate cursor. A prefetched
     // batch is speculative: snapshots commit the verified batch's saved end.
@@ -435,9 +437,9 @@ void recovery_help() {
         <<"Mask tokens: ?l ?u ?d ?s ?a ?b ?h ?H ?1..?4; ?? is literal ?.\n"
         <<"Session/output: --output results.json, --session run.session,\n"
         <<"  --resume run.session (repeat original input options), --overwrite.\n"
-        <<"Runtime: --cpu OR --backend opencl|vulkan|hip (default "<<backend_name(default_backend())<<"), --device N, --batch N (OpenCL/HIP: 1..262144; CPU/Vulkan: 1..4096), --group 1..256,\n"
+        <<"Runtime: --cpu OR --backend opencl|vulkan|hip (default "<<backend_name(default_backend())<<"), --device N, --batch N (GPU: 1..262144; CPU: 1..4096), --group 1..256,\n"
         <<"  --threads 1..64 (CPU only; default logical CPUs, capped at 64),\n"
-        <<"  --chunk 1..256, --kernel PATH, --runtime SECONDS (0=unlimited), --status-every SECONDS,\n"
+        <<"  --chunk 1..1024 (Vulkan) / 1..256 (OpenCL/HIP), --kernel PATH, --runtime SECONDS (0=unlimited), --status-every SECONDS,\n"
         <<"  --nonce-error-corrections 0..1024 (default: flags select 0 or 8).\n"
         <<"  --activity-json emits WIFI_ACTIVITY JSON lines with stages and the latest tested candidate (hex).\n"
         <<"Testing: --allow-software-vulkan permits CPU Vulkan devices and labels them explicitly.\n"
