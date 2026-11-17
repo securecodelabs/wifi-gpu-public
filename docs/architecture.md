@@ -8,7 +8,7 @@ requires one PBKDF2-HMAC-SHA1 derivation with 4096 iterations and a 32-byte PMK.
 
 HIP and OpenCL use the bundled `kernels/pbkdf2.cl`; Vulkan uses the checked-in
 SPIR-V compiled from `kernels/pbkdf2.comp`. CPU mode uses Windows BCrypt or Linux
-OpenSSL. Supported AMD paths can keep PMKs on the GPU and filter eligible
+OpenSSL. HIP, AMD OpenCL and Vulkan can keep PMKs on the GPU and filter eligible
 exact-nonce WPA2 EAPOL v2 records there. Other verification paths run on the CPU.
 Every reported match is independently re-derived and verified using CPU crypto.
 Both PBKDF2 output blocks are retained; there is no reduced-iteration recovery mode.

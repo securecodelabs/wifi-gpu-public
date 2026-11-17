@@ -1,7 +1,7 @@
 # wifi-gpu
 
 A Windows and Linux command-line tool for recovering passwords from HC22000
-records, with HIP, OpenCL, Vulkan, and CPU backends. Version **0.14.1**.
+records, with HIP, OpenCL, Vulkan, and CPU backends. Version **0.15.0**.
 Use it with networks and data you own or have permission to audit.
 
 The engine supports streamed wordlists, masks, hybrid wordlist/mask searches,
@@ -9,6 +9,11 @@ multiple records and SSIDs, JSON results, progress, checkpoints, and resume.
 Every reported match is independently re-derived and verified on the CPU.
 It consumes HC22000 directly; capturing traffic and converting PCAP files are
 outside this project's scope. No container or Hashcat installation is required.
+
+Version 0.15 adds large Vulkan batches, GPU verification and an optional tuned
+AMD RADV compiler profile. Repeated synthetic tests on one RX 9060 XT measured
+657.1 kH/s for masks and 658.0 kH/s for wordlists with that profile.
+See [Vulkan setup](docs/vulkan.md) and [benchmark conditions](docs/benchmarks.md).
 
 ## Build
 

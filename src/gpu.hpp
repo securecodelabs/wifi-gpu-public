@@ -9,7 +9,8 @@
 namespace wifi {
 enum class Backend { OpenCl, Vulkan, Hip };
 Backend default_backend();
-constexpr std::size_t gpu_batch_limit(Backend backend) { return backend==Backend::Vulkan ? 4096 : 262144; }
+constexpr std::size_t gpu_batch_limit(Backend) { return 262144; }
+constexpr std::uint32_t gpu_chunk_limit(Backend backend) { return backend==Backend::Vulkan ? 1024 : 256; }
 Backend parse_backend(const std::string&);
 const char* backend_name(Backend);
 using Pmk = std::array<std::uint8_t,32>;

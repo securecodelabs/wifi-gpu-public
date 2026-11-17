@@ -113,7 +113,7 @@ unsigned recovery_unit_tests() {
     check(parse_record(upper).id==r.id,"canonical record identity");
     // Test the shader ABI guard without a Vulkan driver. These minimal frames
     // exercise framing only; full shader validity is checked by SPIRV-Tools.
-    const char entry[]="wifi_pbkdf2_v2";
+    const char entry[]="wifi_pbkdf2_v4";
     const auto name_words=(sizeof(entry)+3)/4;
     std::vector<std::uint32_t> words(8+name_words);
     words[0]=0x07230203; words[1]=0x00010000; words[3]=2;

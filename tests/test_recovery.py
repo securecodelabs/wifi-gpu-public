@@ -275,6 +275,15 @@ def main():
         # Public upstream mode-22000 self-test and our converter's exported data.
         public = root/'fixtures/hashcat-public.hc22000'
         recover(public, ['--mask', 'hashcat!'])
+        if not args.cpu_only and args.backend=='vulkan':
+            recover(one, ['--mask', 'labpass42', '--chunk', '1024'])
+        # Check backend-specific ceilings in either option order, before any
+        # device is opened. This also runs on hosts without HIP or OpenCL.
+        for backend,limit in (('vulkan',1024),('opencl',256),('hip',256)):
+            for options in (['--chunk',str(limit+1),'--backend',backend],
+                            ['--backend',backend,'--chunk',str(limit+1)]):
+                run(['benchmark',*options],1)
+                run(['recover','--hashes',one,'--mask','labpass42',*options],1)
         converter = Path(__file__).parent/'fixtures/converter-export.hc22000'
         if converter.exists():
             recover(converter.resolve(), ['--mask', 'synthetic-test-password'])
@@ -337,10 +346,11 @@ def main():
             recover(one, ['--mask', 'labpass42', '--kernel', root/'absent-kernel'], 1)
             if args.backend == 'vulkan':
                 shader = (exe.parent/'kernels/pbkdf2.spv').read_bytes()
-                assert b'wifi_pbkdf2_v2' in shader
-                legacy = put('legacy.spv', shader.replace(b'wifi_pbkdf2_v2', b'wifi_pbkdf2_v1'))
-                result = recover(one, ['--mask', 'labpass42', '--kernel', legacy], 1)
-                assert 'ABI mismatch' in result.stderr
+                assert b'wifi_pbkdf2_v4' in shader
+                for version in (b'wifi_pbkdf2_v1', b'wifi_pbkdf2_v2', b'wifi_pbkdf2_v3'):
+                    legacy = put('legacy.spv', shader.replace(b'wifi_pbkdf2_v4', version))
+                    result = recover(one, ['--mask', 'labpass42', '--kernel', legacy], 1)
+                    assert 'ABI mismatch' in result.stderr
                 for index, payload in enumerate((b'', b'not SPIR-V', b'\x00'*20,
                     bytes.fromhex('0302230700060100000000000100000000000000'))):
                     shader = put(f'bad-{index}.spv', payload)

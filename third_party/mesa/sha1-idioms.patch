@@ -1,0 +1,52 @@
+--- a/src/compiler/nir/nir_opt_algebraic.py
++++ b/src/compiler/nir/nir_opt_algebraic.py
+@@ -1773,6 +1773,39 @@
+    (('uror@32', a, b), ('ior', ('ushr', a, b), ('ishl', a, ('isub', 32, b))), '!options->has_rotate32'),
+    (('uror@64', a, b), ('ior', ('ushr', a, b), ('ishl', a, ('isub', 64, b)))),
+ 
++   # wifi-gpu constant funnel-shift experiment: all nonzero 32-bit shifts.
++   (('ior', ('ishl', 'b@32', 31), ('ushr', 'a@32', 1)), ('shfr', b, a, 1), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 30), ('ushr', 'a@32', 2)), ('shfr', b, a, 2), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 29), ('ushr', 'a@32', 3)), ('shfr', b, a, 3), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 28), ('ushr', 'a@32', 4)), ('shfr', b, a, 4), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 27), ('ushr', 'a@32', 5)), ('shfr', b, a, 5), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 26), ('ushr', 'a@32', 6)), ('shfr', b, a, 6), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 25), ('ushr', 'a@32', 7)), ('shfr', b, a, 7), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 24), ('ushr', 'a@32', 8)), ('shfr', b, a, 8), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 23), ('ushr', 'a@32', 9)), ('shfr', b, a, 9), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 22), ('ushr', 'a@32', 10)), ('shfr', b, a, 10), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 21), ('ushr', 'a@32', 11)), ('shfr', b, a, 11), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 20), ('ushr', 'a@32', 12)), ('shfr', b, a, 12), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 19), ('ushr', 'a@32', 13)), ('shfr', b, a, 13), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 18), ('ushr', 'a@32', 14)), ('shfr', b, a, 14), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 17), ('ushr', 'a@32', 15)), ('shfr', b, a, 15), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 16), ('ushr', 'a@32', 16)), ('shfr', b, a, 16), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 15), ('ushr', 'a@32', 17)), ('shfr', b, a, 17), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 14), ('ushr', 'a@32', 18)), ('shfr', b, a, 18), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 13), ('ushr', 'a@32', 19)), ('shfr', b, a, 19), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 12), ('ushr', 'a@32', 20)), ('shfr', b, a, 20), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 11), ('ushr', 'a@32', 21)), ('shfr', b, a, 21), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 10), ('ushr', 'a@32', 22)), ('shfr', b, a, 22), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 9), ('ushr', 'a@32', 23)), ('shfr', b, a, 23), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 8), ('ushr', 'a@32', 24)), ('shfr', b, a, 24), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 7), ('ushr', 'a@32', 25)), ('shfr', b, a, 25), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 6), ('ushr', 'a@32', 26)), ('shfr', b, a, 26), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 5), ('ushr', 'a@32', 27)), ('shfr', b, a, 27), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 4), ('ushr', 'a@32', 28)), ('shfr', b, a, 28), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 3), ('ushr', 'a@32', 29)), ('shfr', b, a, 29), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 2), ('ushr', 'a@32', 30)), ('shfr', b, a, 30), 'options->has_shfr32'),
++   (('ior', ('ishl', 'b@32', 1), ('ushr', 'a@32', 31)), ('shfr', b, a, 31), 'options->has_shfr32'),
++
+    (('bitfield_select', 0xff000000, ('ishl', 'b@32', 24), ('ushr', a, 8)), ('shfr', b, a, 8), 'options->has_shfr32'),
+    (('bitfield_select', 0xffff0000, ('ishl', 'b@32', 16), ('extract_u16', a, 1)), ('shfr', b, a, 16), 'options->has_shfr32'),
+    (('bitfield_select', 0xffffff00, ('ishl', 'b@32', 8), ('extract_u8', a, 3)), ('shfr', b, a, 24), 'options->has_shfr32'),
+@@ -2570,6 +2603,9 @@
+    (('bitfield_select', ('inot', a), b, c), ('bitfield_select', a, c, b)),
+    (('bitfield_select', ('ineg', ('b2i', 'a@1')), b, c), ('bcsel', a, b, c)),
+ 
++   # wifi-gpu majority: two bitwise instructions on hardware with bitselect.
++   (('ior', ('iand', a, b), ('iand', c, ('ixor', a, b))), ('bitfield_select', ('ixor', a, b), c, a), 'options->has_bitfield_select'),
++   (('ior', ('iand', a, b), ('iand', c, ('ior', a, b))), ('bitfield_select', ('ixor', a, b), c, a), 'options->has_bitfield_select'),
+    (('ior', ('iand', a, b), ('iand', ('inot', a), c)), ('bitfield_select', a, b, c), 'options->has_bitfield_select'),
+    (('iadd', ('iand', a, b), ('iand', ('inot', a), c)), ('bitfield_select', a, b, c), 'options->has_bitfield_select'),
+    (('ixor', ('iand', a, b), ('iand', ('inot', a), c)), ('bitfield_select', a, b, c), 'options->has_bitfield_select'),

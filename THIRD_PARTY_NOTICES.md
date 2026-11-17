@@ -8,6 +8,7 @@ replace them.
 | --- | --- | --- |
 | OpenCL headers | Khronos OpenCL-Headers, commit `82f60316cc142e7b21dc1d8983b26de18858fbd9` | Apache-2.0; `third_party/OpenCL-Headers/LICENSE` and header notices |
 | Vulkan headers | Khronos Vulkan-Headers, tag `v1.2.162` | Apache-2.0; `third_party/Vulkan-Headers/LICENSE.txt` and header notices |
+| Mesa NIR patch context | Mesa 26.0.8 `src/compiler/nir/nir_opt_algebraic.py` | MIT, Copyright (C) 2014 Intel Corporation; `third_party/mesa/LICENSE.txt` |
 | Public HC22000 self-test fixture | Hashcat v8.0.0 `src/modules/module_22000.c` | MIT, Copyright 2015–2026 Jens Steube; `third_party/hashcat/LICENSE.txt` |
 
 The OpenCL and Vulkan header provenance is recorded alongside each header set.
