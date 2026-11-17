@@ -38,8 +38,8 @@ def opencl_compression():
                       '    digest[0]=a+base[0]; digest[1]=b+base[1]; digest[2]=c+base[2]; digest[3]=d+base[3]; digest[4]=e+base[4];')
     text=re.sub(r'\(\((\w)&(\w)\)\|\(~\1&(\w)\)\)', r'SHA1_CH(\1,\2,\3)', text)
     text=re.sub(r'\(\((\w)&(\w)\)\|\(\1&(\w)\)\|\(\2&\3\)\)', r'SHA1_MAJ(\1,\2,\3)', text)
-    return ('#if defined(WIFI_GPU_HIP)\n'+hip_compression()+
-            '#if defined(WIFI_GPU_HIP_PAIR)\n'+hip_pair_compression()+'#endif\n'+
+    return ('#if defined(WIFI_GPU_HIP) || defined(WIFI_GPU_OPENCL_GFX1200)\n'+hip_compression()+
+            '#if defined(WIFI_GPU_HIP_PAIR) || defined(WIFI_GPU_OPENCL_GFX1200)\n'+hip_pair_compression()+'#endif\n'+
             '#elif defined(WIFI_GPU_AMD_OPENCL)\n'+amd_opencl_compression()+
             '#else\n'+text+'#endif\n')
 
@@ -82,7 +82,7 @@ def amd_opencl_compression():
 
 # Fixed 20-byte input identities selected by the gfx1200 HIP experiment.
 # Each entry is (previous word indices, rotation, XOR constant before rotation).
-# Keep the OpenCL schedule independent: its compiler favors different code.
+# Older AMD OpenCL devices retain their independent expanded schedule.
 HIP_SCHEDULE = {
     16: ((0, 2), 1, 0x00000000),
     17: ((1, 3), 1, 0x00000000),

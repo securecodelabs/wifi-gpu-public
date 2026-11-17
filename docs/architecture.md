@@ -13,6 +13,12 @@ exact-nonce WPA2 EAPOL v2 records there. Other verification paths run on the CPU
 Every reported match is independently re-derived and verified using CPU crypto.
 Both PBKDF2 output blocks are retained; there is no reduced-iteration recovery mode.
 
+On AMD gfx1200, the OpenCL profile uses paired SHA-1 chains, compact password
+input and an optional LLVM scheduling option through the installed OpenCL
+compiler. If that compiler profile fails, it retries the standard AMD kernel.
+Legacy custom kernels keep their input and loop ABI. OpenCL mask preparation
+overlaps GPU work using the existing bounded prefetch pipeline.
+
 Supported verifier paths include ordinary PMKID SHA1/SHA256, EAPOL key versions
 1/2/3, and supported FT PMKID/EAPOL records. Nonce correction follows record flags
 and an optional explicit bound. Unsupported or malformed data fails validation.

@@ -16,7 +16,7 @@ python scripts/benchmark_recovery.py --exe ./build-hip/wifi-gpu --backend hip --
 ```
 
 For OpenCL or Vulkan, change the backend and executable. All GPU backends
-accept batches up to 262144; Vulkan accepts chunks up to 1024. To use ten uppercase hexadecimal candidates, add
+accept batches up to 262144; OpenCL/Vulkan accept chunks up to 1024. To use ten uppercase hexadecimal candidates, add
 `--mask-file masks/hex-uppercase-10.txt`. Reports include command arguments,
 versions, executable/kernel hashes, search throughput, and whole-process wall
 throughput. Output may include local paths and device details; review before sharing.
@@ -26,6 +26,38 @@ For a derivation-only synthetic benchmark:
 ```sh
 wifi-gpu benchmark --backend hip --batch 262144 --group 64 --chunk 256 --repeats 5
 ```
+
+## OpenCL v0.16 measurements
+
+Three alternating rounds on an AMD Radeon RX 9060 XT (gfx1200, 16 GiB)
+compare the v0.15 OpenCL implementation with the v0.16 compute source, using
+the same compiler, installed runtime and GPU policy. The OpenCL ICD reports
+driver 3581.0 (Ubuntu rocm-opencl-icd 7.1.0), alongside ROCm 7.2 libraries.
+The existing manual memory setting remains 456 MHz with a 175 W cap.
+
+| Workload | v0.15 OpenCL | v0.16 OpenCL | Gain | Tuned range |
+| --- | ---: | ---: | ---: | ---: |
+| Ten-character uppercase hexadecimal mask | 623.6 kH/s | **655.8 kH/s** | **5.17%** | 653.1-656.6 kH/s |
+| Same candidates in a wordlist | 631.9 kH/s | **654.0 kH/s** | **3.49%** | 653.8-656.2 kH/s |
+
+Every job exhausts 16,777,216 candidates against one absent synthetic exact-nonce
+WPA2 EAPOL v2 record. Four known-password controls pass. Sustained throughput
+uses completed-candidate progress versus observer time over the central 20-80%
+of each complete job, including GPU MIC filtering and normal checkpoint writes.
+GPU busy averages are 98.84% and 98.79%. Native search medians are 654.3 and
+652.7 kH/s; whole-process medians, including setup and wordlist scanning, are
+649.8 and 626.8 kH/s. All six tuned runs exceed 650 kH/s in both sustained and
+native search rates.
+
+Batch/group remain 262144/64. The baseline uses chunk 256; the tuned profile
+uses chunk 512. No driver patch, power-cap change or clock-policy change is
+made. These observations apply to this GPU/runtime/workload, not every AMD
+device or dictionary. They are not a new Hashcat comparison.
+
+[Individual measurements](measurements/opencl-0.16.0.json) preserve the numerical
+results with operational paths and private history removed. The measured
+development builds use the same compute source shipped in v0.16.0. See
+[OpenCL setup](opencl.md) for selection, compatibility and reproduction.
 
 ## Vulkan v0.15 measurements
 

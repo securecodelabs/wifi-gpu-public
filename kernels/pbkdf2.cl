@@ -66,7 +66,7 @@ WIFI_DEVICE_INLINE void finish_hmac(const uint opad[5], uint digest[5]) {
 // SHA-1 compression of a 20-byte digest following a 64-byte HMAC pad.
 // Fixed padding and scalar words keep the schedule out of indexed private arrays.
 // BEGIN GENERATED SHA1_20
-#if defined(WIFI_GPU_HIP)
+#if defined(WIFI_GPU_HIP) || defined(WIFI_GPU_OPENCL_GFX1200)
 WIFI_DEVICE_INLINE void sha1_20(const uint base[5],uint digest[5]) {
     uint a=base[0],b=base[1],c=base[2],d=base[3],e=base[4];
     uint w0=digest[0];
@@ -295,7 +295,7 @@ WIFI_DEVICE_INLINE void sha1_20(const uint base[5],uint digest[5]) {
     a=(a+w79+0xca62c1d6u)+(rotate(b,5u)+(c^d^e)); c=rotate(c,30u);
     digest[0]=a+base[0];digest[1]=b+base[1];digest[2]=c+base[2];digest[3]=d+base[3];digest[4]=e+base[4];
 }
-#if defined(WIFI_GPU_HIP_PAIR)
+#if defined(WIFI_GPU_HIP_PAIR) || defined(WIFI_GPU_OPENCL_GFX1200)
 WIFI_DEVICE_INLINE void sha1_pair(const uint base[5],uint u0[5],uint u1[5]) {
     uint a_0=base[0],b_0=base[1],c_0=base[2],d_0=base[3],e_0=base[4];
     uint w0_0=u0[0];
@@ -1051,7 +1051,42 @@ __kernel void pbkdf2_init(__global const Password* passwords,
     states[id]=s;
 }
 
-#if defined(WIFI_GPU_HIP) && defined(WIFI_GPU_HIP_PAIR)
+#ifdef WIFI_GPU_OPENCL_GFX1200
+// Length byte followed by the batch maximum number of password bytes.
+// Bytes beyond the recorded length are never read; reused buffers need no padding.
+__kernel void pbkdf2_init_compact(__global const uchar* passwords,
+                         __global const uchar* ssid, uint ssid_len,
+                         __global State* states, uint count,uint stride) {
+    size_t id=get_global_id(0);
+    if (id>=count) return;
+    State s;
+    uint key[16]={0}, w[16];
+    for (uint i=0;i<passwords[id*stride];++i)
+        key[i>>2] |= ((uint)passwords[id*stride+1+i]) << (24U-8U*(i&3));
+    sha1_initial(s.ipad); sha1_initial(s.opad);
+    for (uint i=0;i<16;++i) w[i]=key[i]^0x36363636U;
+    sha1_block(s.ipad,w);
+    for (uint i=0;i<16;++i) w[i]=key[i]^0x5c5c5c5cU;
+    sha1_block(s.opad,w);
+    for (uint block=0;block<2;++block) {
+        uint inner[5];
+        for (uint i=0;i<16;++i) w[i]=0;
+        for (uint i=0;i<ssid_len;++i) w[i>>2] |= ((uint)ssid[i]) << (24U-8U*(i&3));
+        uint last=ssid_len+3U;
+        w[last>>2] |= (block+1U) << (24U-8U*(last&3));
+        uint pad=ssid_len+4U;
+        w[pad>>2] |= 0x80U << (24U-8U*(pad&3));
+        w[15]=(64U+ssid_len+4U)*8U;
+        for (uint i=0;i<5;++i) inner[i]=s.ipad[i];
+        sha1_block(inner,w);
+        finish_hmac(s.opad,inner);
+        for (uint i=0;i<5;++i) s.u[block*5+i]=s.sum[block*5+i]=inner[i];
+    }
+    states[id]=s;
+}
+#endif
+
+#if (defined(WIFI_GPU_HIP) && defined(WIFI_GPU_HIP_PAIR)) || defined(WIFI_GPU_OPENCL_GFX1200)
 // Interleave both independent SHA-1 chains on gfx1200.
 __kernel void pbkdf2_loop_pair(__global State* states,uint rounds,uint count) {
     size_t id=get_global_id(0);

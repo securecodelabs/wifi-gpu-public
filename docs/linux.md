@@ -47,7 +47,7 @@ and select a backend-specific device index.
 
 For AMD systems with multiple OpenCL ICDs, `scripts/rocm-opencl.py --help` documents
 the optional runtime-selection wrapper. Test the chosen runtime with `selftest`
-before recovery. OpenCL/HIP batches allow up to 262144 candidates; CPU/Vulkan allow
+before recovery. All GPU backends allow up to 262144 candidates; CPU allows
 up to 4096. Large batches can increase cancellation and progress-update latency.
 
 Vulkan CPU emulation is rejected unless `--allow-software-vulkan` is supplied.

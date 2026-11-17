@@ -113,7 +113,9 @@ struct OpenClEngine final : GpuEngine {
     Buffer input_buffer,salt_buffer,state_buffer,output_buffer;
     Buffer filter_keys,filter_ptk,filter_message,filter_tag,filter_flags;
     std::vector<Password> host_input;
-    bool amd_optimized=false;
+    bool amd_optimized=false,compact_input=false;
+    std::size_t loop_items=2;
+    std::vector<cl_uchar> packed_input;
     bool stats=[] {
 #ifdef _WIN32
         char value[2]{};
@@ -142,8 +144,18 @@ struct OpenClEngine final : GpuEngine {
         check(status,"clCreateProgramWithSource");
         const auto vendor=string_info(api,device,CL_DEVICE_VENDOR);
         amd_optimized=vendor=="Advanced Micro Devices, Inc." || vendor=="AMD";
-        status=api.clBuildProgram(program.value,1,&device,amd_optimized ?
-            "-cl-std=CL1.2 -DWIFI_GPU_AMD_OPENCL=1" : "-cl-std=CL1.2",nullptr,nullptr);
+        // Keep the measured RDNA 4 compiler profile specific to gfx1200.
+        // ROCclr forwards -Wb options to LLVM; other vendors use standard C1.2.
+        const auto* standard=amd_optimized ? "-cl-std=CL1.2 -DWIFI_GPU_AMD_OPENCL=1" : "-cl-std=CL1.2";
+        bool tuned=amd_optimized && string_info(api,device,CL_DEVICE_NAME)=="gfx1200";
+        status=api.clBuildProgram(program.value,1,&device,tuned ?
+            "-cl-std=CL1.2 -DWIFI_GPU_AMD_OPENCL=1 -DWIFI_GPU_OPENCL_GFX1200=1 -Wb,-misched=gcn-max-ilp" : standard,nullptr,nullptr);
+        if(tuned && status!=CL_SUCCESS) {
+            // A driver without the optional scheduler can still use the
+            // original AMD kernel. Invalid source must also pass this build.
+            tuned=false;
+            status=api.clBuildProgram(program.value,1,&device,standard,nullptr,nullptr);
+        }
         if(status!=CL_SUCCESS) {
             std::size_t n=0;
             api.clGetProgramBuildInfo(program.value,device,CL_PROGRAM_BUILD_LOG,0,nullptr,&n);
@@ -151,8 +163,20 @@ struct OpenClEngine final : GpuEngine {
             if(n) api.clGetProgramBuildInfo(program.value,device,CL_PROGRAM_BUILD_LOG,n,log.data(),nullptr);
             throw std::runtime_error("OpenCL kernel compilation failed: "+std::string(log.data()));
         }
+        const char* init_name="pbkdf2_init";
+        const char* loop_name="pbkdf2_loop_split";
+        if(tuned) {
+            auto probe=api.clCreateKernel(program.value,"pbkdf2_init_compact",&status);
+            if(probe) { api.clReleaseKernel(probe); init_name="pbkdf2_init_compact"; compact_input=true; }
+            else if(status!=CL_INVALID_KERNEL_NAME) check(status,"compact kernel lookup");
+            probe=api.clCreateKernel(program.value,"pbkdf2_loop_pair",&status);
+            if(probe) { api.clReleaseKernel(probe); loop_name="pbkdf2_loop_pair"; loop_items=1; }
+            else if(status!=CL_INVALID_KERNEL_NAME) check(status,"paired kernel lookup");
+        }
+        if(stats) std::cerr<<"opencl_setup gfx1200_profile="<<tuned<<" compact_input="<<compact_input
+            <<" loop_items="<<loop_items<<'\n';
         const std::pair<Resource<cl_kernel>*,const char*> kernels[]={
-            {&init,"pbkdf2_init"},{&loop,"pbkdf2_loop_split"},{&finish,"pbkdf2_finish"}};
+            {&init,init_name},{&loop,loop_name},{&finish,"pbkdf2_finish"}};
         kernel_group_limit=describe(api,device).max_work_group;
         for(auto item:kernels) {
             item.first->release=api.clReleaseKernel;
@@ -309,19 +333,34 @@ Batch OpenClEngine::derive_impl(const std::vector<Bytes>& passwords,const Bytes&
     if(passwords.empty() || passwords.size()>gpu_batch_limit(Backend::OpenCl)) throw std::invalid_argument("OpenCL batch must contain 1..262144 passwords");
     if(ssid.size()>32) throw std::invalid_argument("SSID exceeds 32 bytes");
     if(iterations==0 || iterations>4096) throw std::invalid_argument("Iterations must be 1..4096");
-    if(chunk==0 || chunk>256) throw std::invalid_argument("Chunk must be 1..256 rounds");
+    if(chunk==0 || chunk>gpu_chunk_limit(Backend::OpenCl)) throw std::invalid_argument("Chunk must be 1..1024 rounds");
     if(group==0 || group>kernel_group_limit) throw std::invalid_argument("Work group exceeds kernel/device limit or is zero");
-    host_input.resize(passwords.size());
-    auto& input=host_input;
-    for(std::size_t i=0;i<input.size();++i) {
-        if(passwords[i].size()>63) throw std::invalid_argument("Password exceeds prototype limit of 63 bytes");
-        std::copy(passwords[i].begin(),passwords[i].end(),input[i].bytes);
-        input[i].length=static_cast<cl_uint>(passwords[i].size());
+    std::size_t maximum=0;
+    for(const auto& password:passwords) {
+        if(password.size()>63) throw std::invalid_argument("Password exceeds prototype limit of 63 bytes");
+        maximum=std::max(maximum,password.size());
     }
+    const cl_uint stride=static_cast<cl_uint>(maximum+1);
     const auto started=std::chrono::steady_clock::now();
     auto& p=*this;
     const cl_uint count=static_cast<cl_uint>(passwords.size());
-    auto in=buffer(input_buffer,input.size()*sizeof(Password),CL_MEM_READ_ONLY,input.data());
+    cl_mem in=nullptr;
+    if(compact_input) {
+        packed_input.resize(passwords.size()*stride);
+        for(std::size_t i=0;i<passwords.size();++i) {
+            auto* target=packed_input.data()+i*stride;
+            target[0]=static_cast<cl_uchar>(passwords[i].size());
+            std::copy(passwords[i].begin(),passwords[i].end(),target+1);
+        }
+        in=buffer(input_buffer,packed_input.size(),CL_MEM_READ_ONLY,packed_input.data());
+    } else {
+        host_input.resize(passwords.size());
+        for(std::size_t i=0;i<passwords.size();++i) {
+            std::copy(passwords[i].begin(),passwords[i].end(),host_input[i].bytes);
+            host_input[i].length=static_cast<cl_uint>(passwords[i].size());
+        }
+        in=buffer(input_buffer,host_input.size()*sizeof(Password),CL_MEM_READ_ONLY,host_input.data());
+    }
     std::array<std::uint8_t,32> salt{};
     std::copy(ssid.begin(),ssid.end(),salt.begin());
     auto sb=buffer(salt_buffer,salt.size(),CL_MEM_READ_ONLY,salt.data());
@@ -330,11 +369,12 @@ Batch OpenClEngine::derive_impl(const std::vector<Bytes>& passwords,const Bytes&
     const auto salt_length=static_cast<cl_uint>(ssid.size());
     p.arg(p.init.value,0,in); p.arg(p.init.value,1,sb); p.arg(p.init.value,2,salt_length);
     p.arg(p.init.value,3,states); p.arg(p.init.value,4,count);
+    if(compact_input) p.arg(p.init.value,5,stride);
     p.arg(p.loop.value,0,states); p.arg(p.loop.value,2,count);
     p.arg(p.finish.value,0,states); p.arg(p.finish.value,1,out); p.arg(p.finish.value,2,count);
     Batch result;
     auto run=[&](cl_kernel kernel) {
-        auto ms=p.launch(kernel,passwords.size()*(kernel==p.loop.value ? 2 : 1),group);
+        auto ms=p.launch(kernel,passwords.size()*(kernel==p.loop.value ? p.loop_items : 1),group);
         result.gpu_ms+=ms; result.max_launch_ms=std::max(result.max_launch_ms,ms);
         result.max_submission_ms=result.max_launch_ms; ++result.submissions;
         if(ms>250.0) throw std::runtime_error("Kernel exceeded 250 ms launch budget; reduce --batch or --chunk");
@@ -349,7 +389,7 @@ Batch OpenClEngine::derive_impl(const std::vector<Bytes>& passwords,const Bytes&
             // Treat --chunk as a ceiling and target 50 ms using the slowest
             // observed round. The existing 250 ms hard check remains in force.
             const auto safe=slowest_round_ms>0 ?
-                static_cast<cl_uint>(std::max(1.0,std::min(256.0,50.0/slowest_round_ms))) : 8U;
+                static_cast<cl_uint>(std::max(1.0,std::min(static_cast<double>(gpu_chunk_limit(Backend::OpenCl)),50.0/slowest_round_ms))) : 8U;
             rounds=std::min(rounds,safe);
         }
         p.arg(p.loop.value,1,rounds);
