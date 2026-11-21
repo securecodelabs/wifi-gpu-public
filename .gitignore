@@ -21,3 +21,6 @@ __pycache__/
 
 /ci-reports/
 /build-linux-release/
+
+# Private experiment archives must never enter this public source snapshot.
+/research/
