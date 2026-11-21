@@ -1,5 +1,20 @@
 # Linux and backend setup
 
+## Direct capture pipe
+
+With WiFi GPU 0.17.0+ and the converter on PATH:
+
+```sh
+set -o pipefail
+wifi-cap2hashcat capture.pcapng |
+  wifi-gpu recover --hashes - --cpu --wordlist words.txt --output results.json
+```
+
+Select a supported GPU backend instead of `--cpu` when available. See the
+[pipeline guide](pipeline.md) for NVIDIA OpenCL/Vulkan examples, a synthetic
+walkthrough, conversion reports and session resume. Ubuntu CPU execution was
+verified locally; NVIDIA access was unavailable in the tested WSL environment.
+
 ## Standalone native build
 
 No sibling repository, container, Rust toolchain, or capture converter is required.

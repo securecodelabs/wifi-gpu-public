@@ -14,6 +14,7 @@
     "share/wifi-gpu/licenses/hashcat.txt": "third_party/hashcat/LICENSE.txt",
     "share/wifi-gpu/docs/linux.md": "docs/linux.md",
     "share/wifi-gpu/docs/usage.md": "docs/usage.md",
+    "share/wifi-gpu/docs/pipeline.md": "docs/pipeline.md",
     "share/wifi-gpu/docs/benchmarks.md": "docs/benchmarks.md",
     "share/wifi-gpu/docs/architecture.md": "docs/architecture.md",
     "share/wifi-gpu/docs/amd-memory-profile.md": "docs/amd-memory-profile.md",

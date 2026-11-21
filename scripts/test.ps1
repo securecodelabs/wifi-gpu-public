@@ -51,6 +51,8 @@ $runner = Join-Path $PSScriptRoot 'run_checked.py'
 Write-Host "Test diagnostics: $logRoot"
 & $Python $runner --logs $logRoot --name integration -- $Python @integration
 if ($LASTEXITCODE -ne 0) { throw 'Recovery integration tests failed.' }
+& $Python $runner --logs $logRoot --name stdin-pipeline -- $Python (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests\test_stdin.py') --exe $exe
+if ($LASTEXITCODE -ne 0) { throw 'Stdin pipeline regression tests failed.' }
 $snapshotBackend = if ($CpuOnly) { 'cpu' } else { $Backend }
 & $Python $runner --logs $logRoot --name snapshots -- $Python (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests\test_snapshot_contention.py') --exe $exe --backend $snapshotBackend
 if ($LASTEXITCODE -ne 0) { throw 'Snapshot contention regression tests failed.' }
