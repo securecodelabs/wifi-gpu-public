@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <istream>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 
 namespace wifi {
@@ -173,7 +174,11 @@ std::vector<Record> read_records_from(NextLine next_line,const std::string& name
         try {
             auto record=parse_record(s); record.line=line;
             if(ids.insert(record.id).second) out.push_back(std::move(record)); else ++duplicates;
-        } catch(const std::exception& e) { throw std::invalid_argument(name+":"+std::to_string(line)+": "+e.what()); }
+        } catch(const std::exception& e) {
+            std::ostringstream message;
+            message<<name<<':'<<line<<": "<<e.what();
+            throw std::invalid_argument(message.str());
+        }
         if(out.size()>100000) throw std::invalid_argument("Too many HC22000 records (limit 100000)");
     }
     if(out.empty()) throw std::invalid_argument("No usable HC22000 records in "+name);
@@ -181,24 +186,21 @@ std::vector<Record> read_records_from(NextLine next_line,const std::string& name
 }
 }
 std::vector<Record> read_records(Input& input,std::size_t& duplicates) {
-    return read_records_from([&](Bytes& line,std::size_t maximum,bool& oversized) {
+    return read_records_from([&input](Bytes& line,std::size_t maximum,bool& oversized) {
         return input.line(line,maximum,oversized);
     },input.path.u8string(),duplicates);
 }
 std::vector<Record> read_records(std::istream& input,std::size_t& duplicates,std::string& sha256) {
     Hash hash(Algorithm::Sha256);
-    auto records=read_records_from([&](Bytes& line,std::size_t maximum,bool& oversized) {
+    auto records=read_records_from([&input,&hash](Bytes& line,std::size_t maximum,bool& oversized) {
         line.clear();
-        for(;;) {
-            auto value=input.get();
-            if(value==std::char_traits<char>::eof()) {
-                if(input.bad() || !input.eof()) throw std::runtime_error("Cannot read HC22000 from stdin");
-                break;
-            }
+        for(auto value=input.get();value!=std::char_traits<char>::eof();value=input.get()) {
             line.push_back(static_cast<std::uint8_t>(value));
             // Bound allocation even if an upstream producer never sends a newline.
             if(value=='\n' || line.size()>maximum+2) break;
         }
+        if(input.bad() || (input.fail() && !input.eof()))
+            throw std::ios_base::failure("Cannot read HC22000 from stdin");
         const bool any=!line.empty();
         hash.update(line.data(),line.size());
         if(!line.empty() && line.back()=='\n') line.pop_back();

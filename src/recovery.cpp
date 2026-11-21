@@ -214,7 +214,7 @@ int recover(const Config& c,std::vector<Record>& records,Input* hashes,const std
         for(const auto& output:outputs) if(same_path(path,output) || same_path(lock,output)) throw std::invalid_argument("Output and session paths overlap");
         outputs.push_back(path); outputs.push_back(lock);
     }
-    std::string configuration="wifi-gpu-search-v1\n"+(hashes?hashes->sha256():stdin_hash)+"\n"+candidates.identity()+"\nnonce="+(c.corrections?std::to_string(*c.corrections):"auto")+"\n";
+    std::string configuration="wifi-gpu-search-v1\n"+(hashes?hashes->sha256():stdin_hash)+"\n"+candidates.identity()+"\nnonce="+(c.corrections.has_value()?std::to_string(*c.corrections):"auto")+"\n";
     auto identity=hex_bytes(digest(Algorithm::Sha256,bytes(configuration)));
     Matches matches; std::uint64_t committed=c.skip;
     std::unique_ptr<Snapshot> session,output;
@@ -459,7 +459,7 @@ int recovery_cli(int argc,char** argv) {
     if(c.hashes=="-") {
 #ifdef _WIN32
         // Preserve CRLF and Ctrl+Z bytes for validation and session identity.
-        if(_setmode(_fileno(stdin),_O_BINARY)==-1) throw std::runtime_error("Cannot set stdin binary mode");
+        if(_setmode(_fileno(stdin),_O_BINARY)==-1) throw std::ios_base::failure("Cannot set stdin binary mode");
 #endif
         records=read_records(std::cin,duplicates,stdin_hash);
     } else {

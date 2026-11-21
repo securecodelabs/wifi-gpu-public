@@ -28,7 +28,8 @@ def main():
         hashes.write_bytes(fixture)
         piped = run(['inspect', '--hashes', '-'], fixture)
         regular = run(['inspect', '--hashes', hashes])
-        assert piped.stdout == regular.stdout and b'records=37' in piped.stdout
+        assert piped.stdout == regular.stdout
+        assert b'records=37' in piped.stdout
 
         base = ['recover', '--cpu', '--threads', '2', '--mask', 'labpass42']
         run([*base, '--hashes', '-', '--output', 'stdin.json'], fixture)
