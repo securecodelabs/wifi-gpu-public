@@ -248,6 +248,37 @@ def main():
         r = recover(mixed, ['--mask', 'labpass42', '--mask', 'newpass99'])
         assert r.stdout.count('FOUND') == 2
 
+        # SSID order deliberately differs from record order. The first group
+        # uses the device-resident path when available; the last shares PMKs.
+        # Latest tested and furthest tested are different in a recovered batch.
+        grouped = put('grouped.hc22000', '\n'.join([
+            oracle.record(ssid=b'z-shared', password=b'early111'),
+            oracle.record(ssid=b'a-single', password=b'later999'),
+            oracle.record(kind=1, ssid=b'z-shared', password=b'early111'),
+        ])+'\n')
+        grouped_words = put('grouped.txt', 'wrong000\nearly111\nlater999\nnever000\n')
+        grouped_output = root/'grouped.json'
+        grouped_options = ['--wordlist', grouped_words, '--batch', '4', '--output', grouped_output]
+        recover(grouped, grouped_options)
+        result = json.loads(grouped_output.read_text())
+        assert result['recovered'] == 3
+        assert result['next_candidate'] == 4
+        assert result['tested_candidates'] == 3
+        assert result['latest_candidate_hex'] == b'early111'.hex()
+        assert [bytes.fromhex(m['password_hex']) for m in result['matches']] == [b'early111', b'later999', b'early111']
+        grouped_session = root/'grouped.session'
+        recover(grouped, [*grouped_options, '--overwrite', '--limit', '2', '--session', grouped_session], 4)
+        result = json.loads(grouped_output.read_text())
+        assert result['recovered'] == 2
+        assert result['next_candidate'] == 2
+        assert result['tested_candidates'] == 2
+        recover(grouped, [*grouped_options, '--resume', grouped_session])
+        result = json.loads(grouped_output.read_text())
+        assert result['recovered'] == 3
+        assert result['next_candidate'] == 4
+        assert result['tested_candidates'] == 3
+        assert result['latest_candidate_hex'] == b'later999'.hex()
+
         # Input validation fails before attempting a search, without overwriting
         # any existing output. Duplicates are removed by canonical record bytes.
         duplicate = put('duplicate.hc22000', '# comment\n'+vectors[0]+'\n'+vectors[0].upper()+'\n')

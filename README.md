@@ -1,7 +1,7 @@
 # wifi-gpu
 
 A Windows and Linux command-line tool for recovering passwords from HC22000
-records, with HIP, OpenCL, Vulkan, and CPU backends. Version **0.17.0**.
+records, with HIP, OpenCL, Vulkan, and CPU backends. Version **0.17.1**.
 Use it with networks and data you own or have permission to audit.
 
 The engine supports streamed wordlists, masks, hybrid wordlist/mask searches,
@@ -132,6 +132,9 @@ further approximately 0.7%; installing the engine does not apply that setting.
 
 ## Development and licensing
 
+- Recovery complexity is checked locally and in CI with pinned clang-tidy;
+  see [code-quality checks](docs/code-quality.md). Releases require builds,
+  tests, sanitizer, security and complexity checks without a hosted analysis subscription.
 - [Contributing and local checks](CONTRIBUTING.md)
 - [Security reports](SECURITY.md)
 - [Architecture and recovery semantics](docs/architecture.md)

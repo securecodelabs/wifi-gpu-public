@@ -11,3 +11,10 @@
 - Keep `/research/` in `.gitignore`. Ignore rules do not protect against already
   tracked files, forced additions, merges, or cherry-picks, so review remains
   necessary. Do not bypass the ignore rule to import private material.
+
+# Release quality
+
+- Resolve local code-quality warnings, including excessive function complexity,
+  before release. Run `scripts/check-complexity.py` before pushing.
+- Releases require passing builds, tests, sanitizer, security and complexity
+  checks. SonarCloud is not a CI, merge or release requirement.

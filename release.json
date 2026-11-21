@@ -25,6 +25,7 @@
     "share/wifi-gpu/licenses/Mesa-NIR.txt": "third_party/mesa/LICENSE.txt",
     "share/wifi-gpu/docs/measurements/vulkan-0.15.0.json": "docs/measurements/vulkan-0.15.0.json",
     "share/wifi-gpu/docs/opencl.md": "docs/opencl.md",
+    "share/wifi-gpu/docs/code-quality.md": "docs/code-quality.md",
     "share/wifi-gpu/docs/measurements/opencl-0.16.0.json": "docs/measurements/opencl-0.16.0.json"
   }
 }
