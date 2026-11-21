@@ -15,6 +15,7 @@
 #include "progress.hpp"
 #include "hardware.hpp"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -24,6 +25,8 @@
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
+#include <thread>
 
 namespace wifi {
 namespace {
@@ -71,73 +74,92 @@ struct Config {
     std::optional<unsigned> corrections;
     std::uint64_t skip=0,limit=0;
 };
-Config parse(int argc,char** argv) {
-    Config c; c.command=argv[1]; std::set<std::string> used;
-    const std::set<std::string> multi={"--wordlist","--mask","--mask-file"};
-    for(int i=2;i<argc;++i) {
-        std::string key=argv[i];
-        if(!multi.count(key) && !used.insert(key).second) throw std::invalid_argument("Duplicate option: "+key);
-        if(key=="--allow-software-vulkan") { c.allow_software=true; continue; }
-        if(key=="--cpu") { c.cpu=true; continue; }
-        if(key=="--activity-json") { c.activity_json=true; continue; }
-        if(key=="--overwrite") { c.overwrite=true; continue; }
-        if(key=="--hex-wordlist") { c.candidates.hexadecimal=true; continue; }
-        if(i+1>=argc) throw std::invalid_argument("Missing value for "+key);
-        std::string value=argv[++i];
-        if(value.empty()) throw std::invalid_argument("Empty value for "+key);
-        if(key=="--hashes") c.hashes=value;
-        else if(key=="--output") c.output=value;
-        else if(key=="--session") c.session=value;
-        else if(key=="--resume") { c.session=value; c.resume=true; }
-        else if(key=="--backend") c.backend=parse_backend(value);
-        else if(key=="--kernel") c.kernel=value;
-        else if(key=="--wordlist") c.candidates.wordlists.push_back(value);
-        else if(key=="--mask") c.candidates.masks.push_back(value);
-        else if(key=="--mask-file") c.candidates.mask_files.push_back(value);
-        else if(key=="--hybrid") c.candidates.hybrid=value;
-        else if(key=="--charset1" || key=="--charset2" || key=="--charset3" || key=="--charset4") c.candidates.custom[static_cast<unsigned>(key.back()-'1')]=value;
-        else if(key=="--device") c.device=static_cast<std::size_t>(unsigned_number(value));
-        else if(key=="--skip") c.skip=unsigned_number(value);
-        else if(key=="--limit") { c.limit=unsigned_number(value); }
-        else {
-            unsigned max=0;
-            if(key=="--threads") max=64;
-            else if(key=="--batch") max=static_cast<unsigned>(gpu_batch_limit(Backend::OpenCl));
-            else if(key=="--group") max=256;
-            else if(key=="--chunk") max=gpu_chunk_limit(Backend::Vulkan);
-            else if(key=="--runtime") max=86400;
-            else if(key=="--status-every") max=3600;
-            else if(key=="--nonce-error-corrections") max=1024;
-            else throw std::invalid_argument("Unknown option: "+key);
-            auto n=unsigned_number(value);
-            if(n>max || (n==0 && key!="--nonce-error-corrections" && key!="--runtime")) throw std::invalid_argument("Out-of-range value for "+key);
-            if(key=="--threads") c.threads=static_cast<unsigned>(n);
-            else if(key=="--batch") c.batch=static_cast<std::size_t>(n);
-            else if(key=="--group") c.group=static_cast<std::size_t>(n);
-            else if(key=="--chunk") c.chunk=static_cast<unsigned>(n);
-            else if(key=="--runtime") c.runtime=static_cast<unsigned>(n);
-            else if(key=="--status-every") c.status_every=static_cast<unsigned>(n);
-            else c.corrections=static_cast<unsigned>(n);
-        }
-    }
-    if(used.count("--resume") && used.count("--session")) throw std::invalid_argument("Use either --session or --resume");
-    if(c.resume && (used.count("--skip") || c.overwrite)) throw std::invalid_argument("--resume cannot be combined with --skip or --overwrite");
-    if(c.cpu && (used.count("--backend") || used.count("--device") || used.count("--kernel") || used.count("--group") || used.count("--chunk"))) throw std::invalid_argument("GPU options cannot be combined with --cpu");
-    if(used.count("--threads") && !c.cpu) throw std::invalid_argument("--threads requires --cpu");
-    if(c.chunk>gpu_chunk_limit(c.backend)) throw std::invalid_argument("--chunk exceeds backend limit (OpenCL/Vulkan: 1024; HIP: 256)");
+bool parse_flag(Config& c,std::string_view key) {
+    if(key=="--allow-software-vulkan") { c.allow_software=true; return true; }
+    if(key=="--cpu") { c.cpu=true; return true; }
+    if(key=="--activity-json") { c.activity_json=true; return true; }
+    if(key=="--overwrite") { c.overwrite=true; return true; }
+    if(key=="--hex-wordlist") { c.candidates.hexadecimal=true; return true; }
+    return false;
+}
+void parse_number(Config& c,const std::string& key,const std::string& value) {
+    unsigned max=0;
+    if(key=="--threads") max=64;
+    else if(key=="--batch") max=static_cast<unsigned>(gpu_batch_limit(Backend::OpenCl));
+    else if(key=="--group") max=256;
+    else if(key=="--chunk") max=gpu_chunk_limit(Backend::Vulkan);
+    else if(key=="--runtime") max=86400;
+    else if(key=="--status-every") max=3600;
+    else if(key=="--nonce-error-corrections") max=1024;
+    else throw std::invalid_argument("Unknown option: "+key);
+    auto n=unsigned_number(value);
+    if(n>max || (n==0 && key!="--nonce-error-corrections" && key!="--runtime")) throw std::invalid_argument("Out-of-range value for "+key);
+    if(key=="--threads") c.threads=static_cast<unsigned>(n);
+    else if(key=="--batch") c.batch=static_cast<std::size_t>(n);
+    else if(key=="--group") c.group=static_cast<std::size_t>(n);
+    else if(key=="--chunk") c.chunk=static_cast<unsigned>(n);
+    else if(key=="--runtime") c.runtime=static_cast<unsigned>(n);
+    else if(key=="--status-every") c.status_every=static_cast<unsigned>(n);
+    else c.corrections=static_cast<unsigned>(n);
+}
+void parse_value(Config& c,const std::string& key,const std::string& value) {
+    if(key=="--hashes") c.hashes=value;
+    else if(key=="--output") c.output=value;
+    else if(key=="--session") c.session=value;
+    else if(key=="--resume") { c.session=value; c.resume=true; }
+    else if(key=="--backend") c.backend=parse_backend(value);
+    else if(key=="--kernel") c.kernel=value;
+    else if(key=="--wordlist") c.candidates.wordlists.push_back(value);
+    else if(key=="--mask") c.candidates.masks.push_back(value);
+    else if(key=="--mask-file") c.candidates.mask_files.push_back(value);
+    else if(key=="--hybrid") c.candidates.hybrid=value;
+    else if(key=="--charset1" || key=="--charset2" || key=="--charset3" || key=="--charset4") c.candidates.custom[static_cast<unsigned>(key.back()-'1')]=value;
+    else if(key=="--device") c.device=static_cast<std::size_t>(unsigned_number(value));
+    else if(key=="--skip") c.skip=unsigned_number(value);
+    else if(key=="--limit") { c.limit=unsigned_number(value); }
+    else parse_number(c,key,value);
+}
+void validate_source_options(const Config& c,const std::set<std::string,std::less<>>& used) {
     if(c.candidates.hexadecimal && c.candidates.wordlists.empty()) throw std::invalid_argument("--hex-wordlist requires --wordlist");
     if(used.count("--hybrid") && (c.candidates.wordlists.empty() || (c.candidates.masks.empty() && c.candidates.mask_files.empty()))) throw std::invalid_argument("--hybrid requires both a wordlist and a mask");
     if(c.command=="inspect") {
         for(const auto& key:used) if(key!="--hashes" && key!="--nonce-error-corrections") throw std::invalid_argument("Unsupported inspect option: "+key);
         if(!c.candidates.wordlists.empty() || !c.candidates.masks.empty() || !c.candidates.mask_files.empty()) throw std::invalid_argument("inspect does not accept candidate sources");
     }
+}
+void validate_backend_options(const Config& c,const std::set<std::string,std::less<>>& used) {
+    if(c.cpu && (used.count("--backend") || used.count("--device") || used.count("--kernel") || used.count("--group") || used.count("--chunk"))) throw std::invalid_argument("GPU options cannot be combined with --cpu");
+    if(used.count("--threads") && !c.cpu) throw std::invalid_argument("--threads requires --cpu");
+    if(c.chunk>gpu_chunk_limit(c.backend)) throw std::invalid_argument("--chunk exceeds backend limit (OpenCL/Vulkan: 1024; HIP: 256)");
+}
+void apply_backend_defaults(Config& c,const std::set<std::string,std::less<>>& used) {
     if(c.allow_software && (c.cpu || c.backend!=Backend::Vulkan)) throw std::invalid_argument("--allow-software-vulkan requires Vulkan mode");
     if(!used.count("--batch") && !c.cpu && c.backend==Backend::Hip) c.batch=262144;
     if(c.batch>(c.cpu ? 4096 : gpu_batch_limit(c.backend)))
         throw std::invalid_argument("--batch exceeds backend limit (GPU: 262144; CPU: 4096)");
     if(c.hashes.empty()) throw std::invalid_argument("--hashes FILE is required");
+}
+Config parse(int argc,char** argv) {
+    Config c; c.command=argv[1]; std::set<std::string,std::less<>> used;
+    const std::set<std::string,std::less<>> multi={"--wordlist","--mask","--mask-file"};
+    int i=2;
+    while(i<argc) {
+        std::string key=argv[i++];
+        if(!multi.count(key) && !used.insert(key).second) throw std::invalid_argument("Duplicate option: "+key);
+        if(parse_flag(c,key)) continue;
+        if(i>=argc) throw std::invalid_argument("Missing value for "+key);
+        std::string value=argv[i++];
+        if(value.empty()) throw std::invalid_argument("Empty value for "+key);
+        parse_value(c,key,value);
+    }
+    if(used.count("--resume") && used.count("--session")) throw std::invalid_argument("Use either --session or --resume");
+    if(c.resume && (used.count("--skip") || c.overwrite)) throw std::invalid_argument("--resume cannot be combined with --skip or --overwrite");
+    validate_backend_options(c,used);
+    validate_source_options(c,used);
+    apply_backend_defaults(c,used);
     return c;
 }
+
 std::string kernel_source(const std::string& override_path,Backend backend) {
     std::filesystem::path path;
     if(!override_path.empty()) path=absolute_path(override_path);
@@ -146,7 +168,7 @@ std::string kernel_source(const std::string& override_path,Backend backend) {
     }
     Input file(path); return file.contents(1024*1024);
 }
-using Matches=std::map<std::string,Bytes>;
+using Matches=std::map<std::string,Bytes,std::less<>>;
 std::string session_text(const std::string& identity,std::uint64_t next,const Matches& matches) {
     std::string text="WIFI-GPU-SESSION\t1\njob\t"+identity+"\nnext\t"+std::to_string(next)+"\n";
     for(const auto& m:matches) text+="match\t"+m.first+"\t"+hex_bytes(m.second)+"\n";
@@ -188,118 +210,74 @@ bool same_path(const std::filesystem::path& a,const std::filesystem::path& b) {
     return std::filesystem::weakly_canonical(a)==std::filesystem::weakly_canonical(b);
 #endif
 }
-int recover(const Config& c,std::vector<Record>& records,Input* hashes,const std::string& stdin_hash,std::size_t duplicates) {
-    Control controls;
-    std::string latest;
-    auto activity=[&](const std::string& stage) {
-        if(c.activity_json) std::cout<<"WIFI_ACTIVITY {\"stage\":"<<json_string(stage)
-            <<",\"batch_size\":"<<c.batch<<",\"latest_candidate_hex\":"<<(latest.empty()?"null":json_string(latest))<<"}\n"<<std::flush;
-    };
-    activity("loading_sources");
-    std::cerr<<"Loading candidate sources and hashing inputs for session identity...\n";
-    Candidates::Scan scan;
-    if(c.activity_json) scan=[&](std::uint64_t scanned,std::uint64_t total,double elapsed) {
-        std::cout<<"WIFI_ACTIVITY {\"stage\":\"loading_sources\",\"batch_size\":"<<c.batch
-            <<",\"latest_candidate_hex\":null,\"wordlist_scan\":{\"bytes_scanned\":"<<scanned
-            <<",\"total_bytes\":"<<total<<",\"elapsed_seconds\":"<<elapsed
-            <<",\"cpu_threads\":1}}\n"<<std::flush;
-    };
-    Candidates candidates(c.candidates,scan);
-    auto paths=candidates.input_paths();
-    if(hashes) paths.push_back(hashes->path);
-    std::vector<std::filesystem::path> outputs;
-    for(const auto& name:{c.output,c.session}) if(!name.empty()) {
-        auto path=absolute_path(name); auto lock=path; lock+=".lock";
-        for(const auto& input:paths) if(same_path(path,input) || same_path(lock,input)) throw std::invalid_argument("Output/session would overwrite an input file");
-        for(const auto& output:outputs) if(same_path(path,output) || same_path(lock,output)) throw std::invalid_argument("Output and session paths overlap");
-        outputs.push_back(path); outputs.push_back(lock);
+// Owns one worker and its exception result. Destruction always joins, while
+// wait() also propagates failures to the recovery/checkpoint error path.
+class BackgroundTask {
+public:
+    BackgroundTask()=default;
+    BackgroundTask(const BackgroundTask&)=delete;
+    BackgroundTask& operator=(const BackgroundTask&)=delete;
+    ~BackgroundTask() { if(worker.joinable()) worker.join(); }
+    bool valid() const { return result.valid(); }
+    void wait() {
+        if(worker.joinable()) worker.join();
+        if(result.valid()) result.get();
     }
-    std::string configuration="wifi-gpu-search-v1\n"+(hashes?hashes->sha256():stdin_hash)+"\n"+candidates.identity()+"\nnonce="+(c.corrections.has_value()?std::to_string(*c.corrections):"auto")+"\n";
-    auto identity=hex_bytes(digest(Algorithm::Sha256,bytes(configuration)));
-    Matches matches; std::uint64_t committed=c.skip;
-    std::unique_ptr<Snapshot> session,output;
-    if(!c.session.empty()) {
-        auto path=absolute_path(c.session);
-        // The sidecar lock prevents a second process from reading stale state and racing this run.
-        session=std::make_unique<Snapshot>(path,c.resume || c.overwrite);
-        if(c.resume) { Input saved(path); read_session(saved.contents(32*1024*1024),identity,committed,matches,records); }
+    template<class Work> void start(Work&& work) {
+        wait();
+        std::packaged_task<void()> task(std::forward<Work>(work));
+        auto next=task.get_future();
+        worker=std::thread(std::move(task));
+        result=std::move(next);
     }
-    if(!c.output.empty()) {
-        auto path=absolute_path(c.output);
-        output=std::make_unique<Snapshot>(path,c.overwrite || c.resume);
-        if(c.resume && std::filesystem::exists(path)) {
-            Input saved(path); Bytes prefix; bool large=false;
-            saved.line(prefix,200,large);
-            auto expected="{\"schema\":1,\"job_id\":"+json_string(identity)+",";
-            std::string value(prefix.begin(),prefix.end());
-            if(value.rfind(expected,0)!=0) throw std::invalid_argument("Existing output belongs to a different job; choose another --output path");
-        }
+private:
+    std::thread worker;
+    std::future<void> result;
+};
+
+class RecoveryError final:public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+class CheckpointError final:public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+struct CandidateBatch {
+    std::vector<Bytes> passwords;
+    std::uint64_t end=0;
+    std::uint64_t rejected=0;
+    bool eof=false;
+};
+
+// Only this producer advances the candidate cursor. Consumers commit batch.end
+// after verification, never the speculative position of the prefetched batch.
+class CandidatePipeline {
+public:
+    CandidatePipeline(const Config& config,Candidates& source,std::uint64_t begin,bool overlap)
+        : c(config),candidates(source),start(begin),prefetch(overlap) {
+        for(auto& batch:batches) batch.passwords.reserve(c.batch);
     }
-    activity("restoring_position");
-    candidates.seek(committed);
-    const auto start=committed;
-    const auto valid_start=candidates.valid_position();
-    auto valid_total=candidates.valid_total();
-    if(valid_total && !c.resume) *valid_total-=valid_start;
-    const auto run_started_at_ms=static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
-    std::uint64_t rejected=0,valid=0,derivations=0,tested_count=0;
-    std::optional<Clock::time_point> started;
-    std::string hardware="null";
-    auto elapsed=[&]{return started?std::chrono::duration<double>(Clock::now()-*started).count():0.0;};
-    // At most one immutable, verified snapshot is being written while the next
-    // GPU batch runs. Join before another write or any terminal checkpoint.
-    // Declared after session/output so destruction joins before their locks die.
-    std::future<void> checkpoint;
-    auto save=[&](const std::string& status,bool asynchronous=false) {
-        if(checkpoint.valid()) checkpoint.get();
-        auto session_data=session?session_text(identity,committed,matches):std::string{};
-        auto output_data=output?result_json(identity,status,committed,matches,records,
-            search_progress(committed,start,valid,elapsed(),c.limit,c.runtime,candidates.keyspace(),run_started_at_ms,valid_total,(c.resume?valid_start:0)+tested_count),hardware,latest,(c.resume?valid_start:0)+tested_count,valid_total):std::string{};
-        auto write=[s=session.get(),o=output.get(),
-                    session_data=std::move(session_data),output_data=std::move(output_data)] {
-            if(s) s->write(session_data);
-            if(o) o->write(output_data);
-        };
-        if(asynchronous && (session || output)) checkpoint=std::async(std::launch::async,std::move(write));
-        else write();
-    };
-    std::map<Bytes,std::vector<std::size_t>> groups;
-    for(std::size_t i=0;i<records.size();++i) groups[records[i].ssid].push_back(i);
-    std::cerr<<"records="<<records.size()<<" duplicates="<<duplicates<<" SSIDs="<<groups.size()<<" start="<<committed;
-    if(auto space=candidates.keyspace()) std::cerr<<" keyspace="<<*space;
-    std::cerr<<" backend="<<(c.cpu?std::string("CPU ")+cpu_provider():std::string(backend_name(c.backend))+" PBKDF2 + CPU MIC/PMKID verification")<<'\n';
-    if(matches.size()==records.size()) { save("recovered"); std::cout<<"All records already verified in the session.\n"; return 0; }
-    std::unique_ptr<Gpu> gpu;
-    std::unique_ptr<Cpu> cpu;
-    bool filter_reported=false;
-    activity("initializing_device");
-    if(!c.cpu) {
-        gpu=std::make_unique<Gpu>(c.device,kernel_source(c.kernel,c.backend),c.backend,c.allow_software);
-        auto test=gpu->derive({bytes("password")},bytes("IEEE"),4096,c.chunk,c.group);
-        if(test.pmks[0]!=reference(bytes("password"),bytes("IEEE"),4096)) throw std::runtime_error("GPU startup self-test failed");
-        if(gpu->info().software) std::cerr<<"SOFTWARE VULKAN: CPU execution; not GPU acceleration\n";
-        hardware=gpu_hardware_json(c.backend,c.device,gpu->info());
-        std::cerr<<"GPU="<<gpu->info().name<<"; startup self-test passed\n";
+    CandidatePipeline(const CandidatePipeline&)=delete;
+    CandidatePipeline& operator=(const CandidatePipeline&)=delete;
+    const CandidateBatch& next() {
+        if(pending.valid()) pending.wait(); else prepare(batches[current]);
+        return batches[current];
     }
-    if(c.cpu) { cpu=std::make_unique<Cpu>(c.threads); hardware=cpu_hardware_json(cpu->threads()); std::cerr<<"CPU threads="<<cpu->threads()<<"; GPU runtimes disabled\n"; }
-    started=Clock::now(); auto reported=*started;
-    save("running");
-    activity("recovering");
-    std::string status="exhausted";
-    auto report=[&] {
-        auto seconds=elapsed();
-        std::cerr<<"status="<<status<<" next="<<committed<<" candidates="<<valid<<" rejected="<<rejected
-            <<" recovered="<<matches.size()<<'/'<<records.size()<<" derivations="<<derivations
-            <<" elapsed_s="<<seconds<<" derivations_per_second="<<(seconds>0?static_cast<double>(derivations)/seconds:0)<<'\n';
-    };
-    struct CandidateBatch {
-        std::vector<Bytes> passwords;
-        std::uint64_t end=0,rejected=0;
-        bool eof=false;
-    } batches[2];
-    for(auto& batch:batches) batch.passwords.reserve(c.batch);
-    auto prepare=[&](CandidateBatch& batch) {
+    bool exhausted(const CandidateBatch& batch) const {
+        auto space=candidates.keyspace();
+        return batch.eof || (space.has_value() && batch.end==*space);
+    }
+    void prepare_next(bool eof) {
+        if(!prefetch || eof || (c.limit && batches[current].end-start>=c.limit)) return;
+        auto* next=&batches[current^1];
+        pending.start([this,next] { prepare(*next); });
+    }
+    void advance() { if(prefetch) current^=1; }
+private:
+    void prepare(CandidateBatch& batch) {
         auto& passwords=batch.passwords;
         batch.rejected=0; batch.eof=false;
         std::size_t count=0;
@@ -312,123 +290,338 @@ int recover(const Config& c,std::vector<Record>& records,Input* hashes,const std
             ++count;
         }
         passwords.resize(count); batch.end=candidates.position();
-    };
-    // GPU mask recovery benefits from preparing the next batch while
-    // PBKDF2 runs. The saved batch end remains the only committed cursor.
-    const bool prefetch=gpu != nullptr;
-    std::size_t current=0;
-    // Only the producer accesses the mutable candidate cursor. A prefetched
-    // batch is speculative: snapshots commit the verified batch's saved end.
-    // Destroying the future joins its producer before candidate storage dies.
-    std::future<void> pending;
-    try {
-        while(matches.size()<records.size()) {
-            if(cancelled) { status="interrupted"; break; }
-            if(c.runtime && elapsed()>=c.runtime) { status="runtime_limit"; break; }
-            if(c.limit && committed-start>=c.limit) { status="candidate_limit"; break; }
-            auto& batch=batches[current];
-            if(pending.valid()) pending.get(); else prepare(batch);
-            auto& passwords=batch.passwords;
-            rejected+=batch.rejected;
-            if(cancelled) { status="interrupted"; break; }
-            const bool eof=batch.eof || (candidates.keyspace() && batch.end==*candidates.keyspace());
-            if(prefetch && !eof && (!c.limit || batch.end-start<c.limit)) {
-                auto* next=&batches[current^1];
-                pending=std::async(std::launch::async,[&prepare,next] { prepare(*next); });
-            }
-            bool complete=true;
-            std::optional<std::size_t> tested,furthest_tested;
-            if(!passwords.empty()) {
-                auto record_match=[&](const Record& record,std::size_t i,const Pmk& pmk) {
-                    auto independent=reference(passwords[i],record.ssid,4096);
-                    if(independent!=pmk || !record.verify(independent)) throw std::runtime_error("GPU hit failed independent CPU verification");
-                    matches.emplace(record.id,passwords[i]);
-                    std::cout<<"FOUND line="<<record.line<<" ssid="<<json_string(display(record.ssid))<<" bssid="<<hex_bytes(record.ap)
-                        <<" password="<<json_string(display(passwords[i]))<<" password_hex="<<hex_bytes(passwords[i])<<'\n'<<std::flush;
-                };
-                for(const auto& group:groups) {
-                    if(cancelled) { complete=false; break; }
-                    if(std::all_of(group.second.begin(),group.second.end(),[&](auto i){return matches.count(records[i].id)!=0;})) continue;
-                    // A single exact-nonce WPA2 record can be filtered before
-                    // downloading keys. Other record combinations keep the
-                    // shared-PMK path below, including unsupported backends.
-                    if(gpu && group.second.size()==1) {
-                        auto& record=records[group.second.front()];
-                        if(record.type==2 && record.key_version==2 && record.contexts.size()==1) {
-                            auto result=gpu->derive_wpa2(passwords,group.first,record.contexts[0],record.eapol,record.tag,c.chunk,c.group);
-                            if(result) {
-                                if(result->count!=passwords.size()) throw std::runtime_error("GPU filtered batch count mismatch");
-                                derivations+=result->count;
-                                if(!filter_reported) {
-                                    std::cerr<<"GPU WPA2 EAPOL MIC filter enabled; hits independently CPU verified\n";
-                                    filter_reported=true;
-                                }
-                                if(cancelled) { complete=false; break; }
-                                tested=passwords.size()-1;
-                                if(!result->hits.empty()) {
-                                    const auto& hit=result->hits.front();
-                                    if(hit.index>=passwords.size()) throw std::runtime_error("GPU filtered batch index out of range");
-                                    if(!record.verify(hit.pmk)) throw std::runtime_error("GPU MIC filter hit failed CPU verification");
-                                    tested=hit.index; record_match(record,hit.index,hit.pmk);
-                                }
-                                furthest_tested=std::max(furthest_tested.value_or(0),*tested);
-                                continue;
-                            }
-                        }
-                    }
-                    std::vector<Pmk> pmks;
-                    if(gpu) pmks=gpu->derive(passwords,group.first,4096,c.chunk,c.group).pmks;
-                    else {
-                        pmks=cpu->derive(passwords,group.first,4096,&cancelled).pmks;
-                        if(pmks.empty()) { complete=false; break; }
-                    }
-                    derivations+=pmks.size();
-                    for(auto index:group.second) {
-                        auto& record=records[index]; if(matches.count(record.id)) continue;
-                        std::optional<Bytes> filtered;
-                        if(gpu && record.type==2 && record.key_version==2 && record.contexts.size()==1)
-                            filtered=gpu->filter_wpa2(pmks,record.contexts[0],record.eapol,record.tag,c.group);
-                        if(filtered && !filter_reported) {
-                            std::cerr<<"GPU WPA2 EAPOL MIC filter enabled; hits independently CPU verified\n";
-                            filter_reported=true;
-                        }
-                        for(std::size_t i=0;i<pmks.size();++i) {
-                            if(cancelled) { complete=false; break; }
-                            tested=i; furthest_tested=std::max(furthest_tested.value_or(0),i);
-                            if(filtered) {
-                                if(!filtered->at(i)) continue;
-                                if(!record.verify(pmks[i])) throw std::runtime_error("GPU MIC filter hit failed CPU verification");
-                            } else if(!record.verify(pmks[i])) continue;
-                            record_match(record,i,pmks[i]);
-                            break;
-                        }
-                        if(!complete) break;
-                    }
-                    if(!complete) break;
-                }
-            }
-            if(tested) { latest=hex_bytes(passwords[*tested]); activity("recovering"); }
-            if(!complete) { status="interrupted"; break; }
-            committed=batch.end; valid+=passwords.size();
-            if(furthest_tested) tested_count+=*furthest_tested+1;
-            status="running";
-            if(matches.size()==records.size()) { status="recovered"; save(status); break; }
-            if(eof) { status="exhausted"; save(status); break; }
-            save(status,gpu!=nullptr);
-            if(std::chrono::duration<double>(Clock::now()-reported).count()>=c.status_every) { report(); reported=Clock::now(); }
-            if(prefetch) current^=1;
-        }
-        save(status); report();
-    } catch(...) {
-        // committed advances only after every SSID in a batch has been verified.
-        // A failed or interrupted batch is replayed on resume; verified hits remain.
-        try { save("error"); } catch(const std::exception& e) { std::cerr<<"Could not save recovery state: "<<e.what()<<'\n'; }
-        throw;
     }
-    if(status=="recovered") return 0;
-    if(status=="interrupted") return 3;
-    if(status=="exhausted") return 2;
-    return 4;
+    const Config& c;
+    Candidates& candidates;
+    const std::uint64_t start;
+    const bool prefetch;
+    std::size_t current=0;
+    std::array<CandidateBatch,2> batches;
+    // Declared last: destruction joins the producer before its buffers die.
+    BackgroundTask pending;
+};
+
+Candidates::Scan source_scan(const Config& c) {
+    if(c.activity_json) std::cout<<R"json(WIFI_ACTIVITY {"stage":"loading_sources","batch_size":)json"<<c.batch
+        <<R"json(,"latest_candidate_hex":null})json"<<'\n'<<std::flush;
+    std::cerr<<"Loading candidate sources and hashing inputs for session identity...\n";
+    if(!c.activity_json) return {};
+    return [&c](std::uint64_t scanned,std::uint64_t total,double elapsed) {
+        std::cout<<R"json(WIFI_ACTIVITY {"stage":"loading_sources","batch_size":)json"<<c.batch
+            <<R"json(,"latest_candidate_hex":null,"wordlist_scan":{"bytes_scanned":)json"<<scanned
+            <<R"json(,"total_bytes":)json"<<total<<R"json(,"elapsed_seconds":)json"<<elapsed
+            <<R"json(,"cpu_threads":1}})json"<<'\n'<<std::flush;
+    };
+}
+
+void validate_output_paths(const Config& c,const std::vector<std::filesystem::path>& inputs) {
+    std::vector<std::filesystem::path> outputs;
+    for(const auto& name:{c.output,c.session}) {
+        if(name.empty()) continue;
+        auto path=absolute_path(name); auto lock=path; lock+=".lock";
+        for(const auto& input:inputs)
+            if(same_path(path,input) || same_path(lock,input)) throw std::invalid_argument("Output/session would overwrite an input file");
+        for(const auto& output:outputs)
+            if(same_path(path,output) || same_path(lock,output)) throw std::invalid_argument("Output and session paths overlap");
+        outputs.push_back(path); outputs.push_back(lock);
+    }
+}
+
+struct BatchVerification {
+    bool complete=true;
+    std::optional<std::size_t> tested;
+    std::optional<std::size_t> furthest_tested;
+    void mark_tested(std::size_t index) {
+        tested=index;
+        furthest_tested=std::max(furthest_tested.value_or(0),index);
+    }
+};
+
+bool exact_wpa2(const Record& record) {
+    return record.type==2 && record.key_version==2 && record.contexts.size()==1;
+}
+
+struct RecoveryProgress {
+    std::uint64_t committed=0;
+    std::uint64_t start=0;
+    std::uint64_t valid_start=0;
+    std::uint64_t run_started_at_ms=0;
+    std::uint64_t rejected=0;
+    std::uint64_t valid=0;
+    std::uint64_t derivations=0;
+    std::uint64_t tested_count=0;
+    std::optional<std::uint64_t> valid_total;
+    std::optional<Clock::time_point> started;
+    Clock::time_point reported{};
+};
+
+class RecoveryRun {
+public:
+    RecoveryRun(const Config& config,const std::vector<Record>& input,Input* hashes,const std::string& stdin_hash)
+        : c(config),records(input),candidates(c.candidates,source_scan(c)) {
+        progress.committed=c.skip;
+        auto paths=candidates.input_paths();
+        if(hashes) paths.push_back(hashes->path);
+        validate_output_paths(c,paths);
+        std::string configuration="wifi-gpu-search-v1\n"+(hashes?hashes->sha256():stdin_hash)+"\n"+candidates.identity()+"\nnonce="+(c.corrections.has_value()?std::to_string(*c.corrections):"auto")+"\n";
+        identity=hex_bytes(digest(Algorithm::Sha256,bytes(configuration)));
+        restore_session();
+        open_output();
+        activity("restoring_position");
+        candidates.seek(progress.committed);
+        progress.start=progress.committed;
+        progress.valid_start=candidates.valid_position();
+        progress.valid_total=candidates.valid_total();
+        if(progress.valid_total.has_value() && !c.resume) *progress.valid_total-=progress.valid_start;
+        progress.run_started_at_ms=static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+        for(std::size_t i=0;i<records.size();++i) groups[records[i].ssid].push_back(i);
+    }
+    int run(std::size_t duplicates) {
+        report_inputs(duplicates);
+        if(matches.size()==records.size()) {
+            save("recovered");
+            std::cout<<"All records already verified in the session.\n";
+            return 0;
+        }
+        initialize_device();
+        progress.started=Clock::now(); progress.reported=*progress.started;
+        save("running");
+        activity("recovering");
+        CandidatePipeline pipeline(c,candidates,progress.start,gpu!=nullptr);
+        try {
+            run_batches(pipeline);
+            save(status); report();
+        } catch(...) {
+            save_error();
+            throw;
+        }
+        return exit_code();
+    }
+private:
+    using Group=std::pair<const Bytes,std::vector<std::size_t>>;
+    void activity(const std::string& stage) const {
+        if(c.activity_json) std::cout<<R"json(WIFI_ACTIVITY {"stage":)json"<<json_string(stage)
+            <<R"json(,"batch_size":)json"<<c.batch<<R"json(,"latest_candidate_hex":)json"<<(latest.empty()?"null":json_string(latest))<<"}\n"<<std::flush;
+    }
+    void restore_session() {
+        if(c.session.empty()) return;
+        auto path=absolute_path(c.session);
+        // Acquire the sidecar lock before reading state, preventing stale resumes.
+        session=std::make_unique<Snapshot>(path,c.resume || c.overwrite);
+        if(c.resume) { Input saved(path); read_session(saved.contents(32*1024*1024),identity,progress.committed,matches,records); }
+    }
+    void open_output() {
+        if(c.output.empty()) return;
+        auto path=absolute_path(c.output);
+        output=std::make_unique<Snapshot>(path,c.overwrite || c.resume);
+        if(!c.resume || !std::filesystem::exists(path)) return;
+        Input saved(path); Bytes prefix; bool large=false;
+        saved.line(prefix,200,large);
+        auto expected=R"json({"schema":1,"job_id":)json"+json_string(identity)+",";
+        std::string value(prefix.begin(),prefix.end());
+        if(value.rfind(expected,0)!=0) throw std::invalid_argument("Existing output belongs to a different job; choose another --output path");
+    }
+    double elapsed() const {
+        return progress.started?std::chrono::duration<double>(Clock::now()-*progress.started).count():0.0;
+    }
+    std::string output_text(const std::string& state) const {
+        const auto tested=(c.resume?progress.valid_start:0)+progress.tested_count;
+        auto telemetry=search_progress(progress.committed,progress.start,progress.valid,elapsed(),c.limit,c.runtime,candidates.keyspace(),
+            progress.run_started_at_ms,progress.valid_total,tested);
+        return result_json(identity,state,progress.committed,matches,records,telemetry,hardware,latest,tested,progress.valid_total);
+    }
+    void save(const std::string& state,bool asynchronous=false) try {
+        // One immutable verified snapshot at a time. Join before another write
+        // or a terminal checkpoint; the writer never reads live recovery state.
+        if(checkpoint.valid()) checkpoint.wait();
+        auto session_data=session?session_text(identity,progress.committed,matches):std::string{};
+        auto output_data=output?output_text(state):std::string{};
+        auto write=[s=session.get(),o=output.get(),
+                    session_data=std::move(session_data),output_data=std::move(output_data)] {
+            if(s) s->write(session_data);
+            if(o) o->write(output_data);
+        };
+        if(asynchronous && (session || output)) checkpoint.start(std::move(write));
+        else write();
+    } catch(const std::bad_alloc&) {
+        throw;
+    } catch(const std::exception& e) {
+        // Normalize serialization, worker and filesystem failures at the
+        // checkpoint boundary, preserving their original diagnostic text.
+        throw CheckpointError(e.what());
+    }
+    void save_error() {
+        // Failed/interrupted batches replay on resume; independently verified
+        // hits survive, but speculative candidate offsets never become durable.
+        try { save("error"); }
+        catch(const CheckpointError& e) { std::cerr<<"Could not save recovery state: "<<e.what()<<'\n'; }
+        catch(const std::bad_alloc&) { std::cerr<<"Not enough memory to save recovery state\n"; }
+    }
+    void report_inputs(std::size_t duplicates) const {
+        std::cerr<<"records="<<records.size()<<" duplicates="<<duplicates<<" SSIDs="<<groups.size()<<" start="<<progress.committed;
+        if(auto space=candidates.keyspace(); space.has_value()) std::cerr<<" keyspace="<<*space;
+        std::cerr<<" backend="<<(c.cpu?std::string("CPU ")+cpu_provider():std::string(backend_name(c.backend))+" PBKDF2 + CPU MIC/PMKID verification")<<'\n';
+    }
+    void initialize_device() {
+        activity("initializing_device");
+        if(c.cpu) {
+            cpu=std::make_unique<Cpu>(c.threads);
+            hardware=cpu_hardware_json(cpu->threads());
+            std::cerr<<"CPU threads="<<cpu->threads()<<"; GPU runtimes disabled\n";
+            return;
+        }
+        gpu=std::make_unique<Gpu>(c.device,kernel_source(c.kernel,c.backend),c.backend,c.allow_software);
+        if(auto test=gpu->derive({bytes("password")},bytes("IEEE"),4096,c.chunk,c.group);
+           test.pmks[0]!=reference(bytes("password"),bytes("IEEE"),4096)) throw RecoveryError("GPU startup self-test failed");
+        if(gpu->info().software) std::cerr<<"SOFTWARE VULKAN: CPU execution; not GPU acceleration\n";
+        hardware=gpu_hardware_json(c.backend,c.device,gpu->info());
+        std::cerr<<"GPU="<<gpu->info().name<<"; startup self-test passed\n";
+    }
+    void report() const {
+        auto seconds=elapsed();
+        std::cerr<<"status="<<status<<" next="<<progress.committed<<" candidates="<<progress.valid<<" rejected="<<progress.rejected
+            <<" recovered="<<matches.size()<<'/'<<records.size()<<" derivations="<<progress.derivations
+            <<" elapsed_s="<<seconds<<" derivations_per_second="<<(seconds>0?static_cast<double>(progress.derivations)/seconds:0)<<'\n';
+    }
+    void report_if_due() {
+        if(std::chrono::duration<double>(Clock::now()-progress.reported).count()<c.status_every) return;
+        report(); progress.reported=Clock::now();
+    }
+    void report_filter() {
+        if(filter_reported) return;
+        std::cerr<<"GPU WPA2 EAPOL MIC filter enabled; hits independently CPU verified\n";
+        filter_reported=true;
+    }
+    bool stop_requested() {
+        if(cancelled) { status="interrupted"; return true; }
+        if(c.runtime && elapsed()>=c.runtime) { status="runtime_limit"; return true; }
+        if(c.limit && progress.committed-progress.start>=c.limit) { status="candidate_limit"; return true; }
+        return false;
+    }
+    void run_batches(CandidatePipeline& pipeline) {
+        while(matches.size()<records.size()) {
+            if(stop_requested()) return;
+            const auto& batch=pipeline.next();
+            progress.rejected+=batch.rejected;
+            if(cancelled) { status="interrupted"; return; }
+            const bool eof=pipeline.exhausted(batch);
+            pipeline.prepare_next(eof);
+            auto verification=verify_batch(batch.passwords);
+            if(verification.tested.has_value()) { latest=hex_bytes(batch.passwords[*verification.tested]); activity("recovering"); }
+            if(!verification.complete) { status="interrupted"; return; }
+            progress.committed=batch.end; progress.valid+=batch.passwords.size();
+            if(verification.furthest_tested.has_value()) progress.tested_count+=*verification.furthest_tested+1;
+            status="running";
+            if(matches.size()==records.size()) { status="recovered"; save(status); return; }
+            if(eof) { status="exhausted"; save(status); return; }
+            save(status,gpu!=nullptr);
+            report_if_due();
+            pipeline.advance();
+        }
+    }
+    bool group_recovered(const Group& group) const {
+        return std::all_of(group.second.begin(),group.second.end(),[this](auto i){return matches.count(records[i].id)!=0;});
+    }
+    BatchVerification verify_batch(const std::vector<Bytes>& passwords) {
+        BatchVerification verification;
+        if(passwords.empty()) return verification;
+        for(const auto& group:groups) {
+            if(cancelled) { verification.complete=false; return verification; }
+            if(group_recovered(group)) continue;
+            if(!verify_device_group(group,passwords,verification)) verify_shared_group(group,passwords,verification);
+            if(!verification.complete) break;
+        }
+        return verification;
+    }
+    bool verify_device_group(const Group& group,const std::vector<Bytes>& passwords,BatchVerification& verification) {
+        // A single exact-nonce WPA2 record can be filtered without downloading
+        // all PMKs. Unsupported backends/record combinations use shared PMKs.
+        if(!gpu || group.second.size()!=1) return false;
+        const auto& record=records[group.second.front()];
+        if(!exact_wpa2(record)) return false;
+        auto result=gpu->derive_wpa2(passwords,group.first,record.contexts[0],record.eapol,record.tag,c.chunk,c.group);
+        if(!result) return false;
+        if(result->count!=passwords.size()) throw RecoveryError("GPU filtered batch count mismatch");
+        progress.derivations+=result->count;
+        report_filter();
+        if(cancelled) { verification.complete=false; return true; }
+        auto tested=passwords.size()-1;
+        if(!result->hits.empty()) {
+            const auto& hit=result->hits.front();
+            if(hit.index>=passwords.size()) throw RecoveryError("GPU filtered batch index out of range");
+            if(!record.verify(hit.pmk)) throw RecoveryError("GPU MIC filter hit failed CPU verification");
+            tested=hit.index; record_match(record,passwords[hit.index],hit.pmk);
+        }
+        verification.mark_tested(tested);
+        return true;
+    }
+    void verify_shared_group(const Group& group,const std::vector<Bytes>& passwords,BatchVerification& verification) {
+        auto pmks=gpu?gpu->derive(passwords,group.first,4096,c.chunk,c.group).pmks
+                     :cpu->derive(passwords,group.first,4096,&cancelled).pmks;
+        if(!gpu && pmks.empty()) { verification.complete=false; return; }
+        progress.derivations+=pmks.size();
+        for(auto index:group.second) {
+            const auto& record=records[index];
+            if(matches.count(record.id)) continue;
+            verify_record(record,passwords,pmks,verification);
+            if(!verification.complete) return;
+        }
+    }
+    static bool filter_matches(const Record& record,const Pmk& pmk,const std::optional<Bytes>& filtered,std::size_t index) {
+        if(!filtered) return record.verify(pmk);
+        if(!filtered->at(index)) return false;
+        if(!record.verify(pmk)) throw RecoveryError("GPU MIC filter hit failed CPU verification");
+        return true;
+    }
+    void verify_record(const Record& record,const std::vector<Bytes>& passwords,const std::vector<Pmk>& pmks,BatchVerification& verification) {
+        std::optional<Bytes> filtered;
+        if(gpu && exact_wpa2(record)) filtered=gpu->filter_wpa2(pmks,record.contexts[0],record.eapol,record.tag,c.group);
+        if(filtered) report_filter();
+        for(std::size_t i=0;i<pmks.size();++i) {
+            if(cancelled) { verification.complete=false; return; }
+            verification.mark_tested(i);
+            if(!filter_matches(record,pmks[i],filtered,i)) continue;
+            record_match(record,passwords[i],pmks[i]);
+            return;
+        }
+    }
+    void record_match(const Record& record,const Bytes& password,const Pmk& pmk) {
+        if(auto independent=reference(password,record.ssid,4096);
+           independent!=pmk || !record.verify(independent)) throw RecoveryError("GPU hit failed independent CPU verification");
+        matches.try_emplace(record.id,password);
+        std::cout<<"FOUND line="<<record.line<<" ssid="<<json_string(display(record.ssid))<<" bssid="<<hex_bytes(record.ap)
+            <<" password="<<json_string(display(password))<<" password_hex="<<hex_bytes(password)<<'\n'<<std::flush;
+    }
+    int exit_code() const {
+        if(status=="recovered") return 0;
+        if(status=="interrupted") return 3;
+        if(status=="exhausted") return 2;
+        return 4;
+    }
+    const Config& c;
+    const std::vector<Record>& records;
+    Candidates candidates;
+    std::string identity;
+    std::string latest;
+    std::string hardware="null";
+    std::string status="exhausted";
+    Matches matches;
+    RecoveryProgress progress;
+    std::map<Bytes,std::vector<std::size_t>> groups;
+    std::unique_ptr<Snapshot> session;
+    std::unique_ptr<Snapshot> output;
+    std::unique_ptr<Gpu> gpu;
+    std::unique_ptr<Cpu> cpu;
+    bool filter_reported=false;
+    // Declared last: join the writer before the snapshots and their locks die.
+    BackgroundTask checkpoint;
+};
+
+int recover(const Config& c,const std::vector<Record>& records,Input* hashes,const std::string& stdin_hash,std::size_t duplicates) {
+    Control controls;
+    RecoveryRun run(c,records,hashes,stdin_hash);
+    return run.run(duplicates);
 }
 }
 void recovery_help() {

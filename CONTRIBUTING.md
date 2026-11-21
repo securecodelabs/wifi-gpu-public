@@ -19,6 +19,11 @@ runs, and identical settings; include regressions and hardware limits.
 
 For static checks, install `.github/requirements-ci.txt` in a virtual environment
 and run `python scripts/ci_security.py`. Downloaded lint binaries are checksum-pinned.
+Also install the checksum-pinned `.github/requirements-complexity.txt` with
+`python -m pip install --only-binary=:all: --require-hashes -r .github/requirements-complexity.txt`
+and run `python scripts/check-complexity.py` before pushing. Every function in
+`src/recovery.cpp` must have cognitive complexity at most 25. See
+[code-quality checks](docs/code-quality.md) for requirements and coverage.
 Public workflows run on GitHub-hosted runners. Keep personal/GPU runners attached
 to private repositories and run only reviewed code there.
 

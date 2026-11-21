@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(wifi_gpu VERSION 0.17.0 LANGUAGES CXX)
+project(wifi_gpu VERSION 0.17.1 LANGUAGES CXX)
 
 add_executable(wifi-gpu src/main.cpp src/gpu.cpp src/opencl_gpu.cpp src/hip_gpu.cpp src/vulkan_gpu.cpp src/reference.cpp src/cpu.cpp src/crypto_common.cpp src/hc22000.cpp src/candidates.cpp src/recovery.cpp src/recovery_tests.cpp)
 option(WIFI_GPU_ENABLE_HIP "Build the Linux ROCm 7 HIP/HIPRTC backend and use it by default" OFF)
