@@ -1,5 +1,6 @@
 #pragma once
 #include "files.hpp"
+#include <iosfwd>
 #include <optional>
 namespace wifi {
 struct Record {
@@ -14,5 +15,6 @@ struct Record {
 };
 Record parse_record(const std::string& line);
 std::vector<Record> read_records(Input& input,std::size_t& duplicates);
+std::vector<Record> read_records(std::istream& input,std::size_t& duplicates,std::string& sha256);
 Bytes kdf_sha256(const Bytes& key,const std::string& label,const Bytes& context,unsigned bits);
 }

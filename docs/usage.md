@@ -6,6 +6,27 @@ and describes records without searching. Password candidates are byte strings
 of 8–63 bytes; UTF-16 wordlists are rejected. Use `--hex-wordlist` for hexadecimal
 byte encodings, and UTF-8 or byte-oriented text for ordinary wordlists.
 
+## Read hashes from a pipe
+
+Use `--hashes -` with `inspect` or `recover` to read HC22000 from stdin:
+
+```sh
+wifi-cap2hashcat capture.pcapng |
+  wifi-gpu recover --hashes - --backend opencl --wordlist words.txt --output results.json
+```
+
+The same syntax works in PowerShell. Bash scripts should enable `set -o pipefail`
+to report upstream conversion failures. Keep converter stderr separate from the
+pipe. For CPU recovery, replace `--backend opencl` with `--cpu`.
+
+The stream is validated through EOF before recovery, with the same parser limits
+as a hash file. Empty or malformed input fails. Wordlists remain files. Sessions
+can resume by piping the exact same bytes again; changed bytes or line endings
+change the session identity. A file literally named `-` can be read as `./-`.
+
+Stdin support requires WiFi GPU 0.17.0 or newer. See the [pipeline guide](pipeline.md)
+for Windows, Linux, synthetic captures and complete checkpoint/resume examples.
+
 ## Wordlists, masks, and hybrids
 
 `--wordlist`, `--mask`, and `--mask-file` can be repeated. With wordlists and masks

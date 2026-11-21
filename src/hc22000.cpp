@@ -1,5 +1,6 @@
 #include "hc22000.hpp"
 #include <algorithm>
+#include <istream>
 #include <set>
 #include <stdexcept>
 
@@ -156,10 +157,12 @@ bool Record::verify(const Pmk& pmk) const {
     }
     return false;
 }
-std::vector<Record> read_records(Input& input,std::size_t& duplicates) {
+namespace {
+template<class NextLine>
+std::vector<Record> read_records_from(NextLine next_line,const std::string& name,std::size_t& duplicates) {
     std::vector<Record> out; std::set<std::string> ids; Bytes b; bool too_long=false;
     std::size_t line=0,total=0; duplicates=0;
-    while(input.line(b,16384,too_long)) {
+    while(next_line(b,16384,too_long)) {
         ++line; total+=b.size();
         if(too_long || total>64*1024*1024 || line>1000000) throw std::invalid_argument("HC22000 file exceeds input limits at line "+std::to_string(line));
         if(line==1 && b.size()>=3 && b[0]==0xef && b[1]==0xbb && b[2]==0xbf) b.erase(b.begin(),b.begin()+3);
@@ -170,10 +173,40 @@ std::vector<Record> read_records(Input& input,std::size_t& duplicates) {
         try {
             auto record=parse_record(s); record.line=line;
             if(ids.insert(record.id).second) out.push_back(std::move(record)); else ++duplicates;
-        } catch(const std::exception& e) { throw std::invalid_argument(input.path.u8string()+":"+std::to_string(line)+": "+e.what()); }
+        } catch(const std::exception& e) { throw std::invalid_argument(name+":"+std::to_string(line)+": "+e.what()); }
         if(out.size()>100000) throw std::invalid_argument("Too many HC22000 records (limit 100000)");
     }
-    if(out.empty()) throw std::invalid_argument("No usable HC22000 records in "+input.path.u8string());
+    if(out.empty()) throw std::invalid_argument("No usable HC22000 records in "+name);
     return out;
+}
+}
+std::vector<Record> read_records(Input& input,std::size_t& duplicates) {
+    return read_records_from([&](Bytes& line,std::size_t maximum,bool& oversized) {
+        return input.line(line,maximum,oversized);
+    },input.path.u8string(),duplicates);
+}
+std::vector<Record> read_records(std::istream& input,std::size_t& duplicates,std::string& sha256) {
+    Hash hash(Algorithm::Sha256);
+    auto records=read_records_from([&](Bytes& line,std::size_t maximum,bool& oversized) {
+        line.clear();
+        for(;;) {
+            auto value=input.get();
+            if(value==std::char_traits<char>::eof()) {
+                if(input.bad() || !input.eof()) throw std::runtime_error("Cannot read HC22000 from stdin");
+                break;
+            }
+            line.push_back(static_cast<std::uint8_t>(value));
+            // Bound allocation even if an upstream producer never sends a newline.
+            if(value=='\n' || line.size()>maximum+2) break;
+        }
+        const bool any=!line.empty();
+        hash.update(line.data(),line.size());
+        if(!line.empty() && line.back()=='\n') line.pop_back();
+        if(!line.empty() && line.back()=='\r') line.pop_back();
+        oversized=line.size()>maximum;
+        return any;
+    },"stdin",duplicates);
+    sha256=hex_bytes(hash.finish());
+    return records;
 }
 }

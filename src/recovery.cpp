@@ -1,7 +1,11 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include "platform.hpp"
-#ifndef _WIN32
+#ifdef _WIN32
+#include <cstdio>
+#include <fcntl.h>
+#include <io.h>
+#else
 #include <csignal>
 #endif
 #include "recovery.hpp"
@@ -184,7 +188,7 @@ bool same_path(const std::filesystem::path& a,const std::filesystem::path& b) {
     return std::filesystem::weakly_canonical(a)==std::filesystem::weakly_canonical(b);
 #endif
 }
-int recover(const Config& c,std::vector<Record>& records,Input& hashes,std::size_t duplicates) {
+int recover(const Config& c,std::vector<Record>& records,Input* hashes,const std::string& stdin_hash,std::size_t duplicates) {
     Control controls;
     std::string latest;
     auto activity=[&](const std::string& stage) {
@@ -201,7 +205,8 @@ int recover(const Config& c,std::vector<Record>& records,Input& hashes,std::size
             <<",\"cpu_threads\":1}}\n"<<std::flush;
     };
     Candidates candidates(c.candidates,scan);
-    auto paths=candidates.input_paths(); paths.push_back(hashes.path);
+    auto paths=candidates.input_paths();
+    if(hashes) paths.push_back(hashes->path);
     std::vector<std::filesystem::path> outputs;
     for(const auto& name:{c.output,c.session}) if(!name.empty()) {
         auto path=absolute_path(name); auto lock=path; lock+=".lock";
@@ -209,7 +214,7 @@ int recover(const Config& c,std::vector<Record>& records,Input& hashes,std::size
         for(const auto& output:outputs) if(same_path(path,output) || same_path(lock,output)) throw std::invalid_argument("Output and session paths overlap");
         outputs.push_back(path); outputs.push_back(lock);
     }
-    std::string configuration="wifi-gpu-search-v1\n"+hashes.sha256()+"\n"+candidates.identity()+"\nnonce="+(c.corrections?std::to_string(*c.corrections):"auto")+"\n";
+    std::string configuration="wifi-gpu-search-v1\n"+(hashes?hashes->sha256():stdin_hash)+"\n"+candidates.identity()+"\nnonce="+(c.corrections?std::to_string(*c.corrections):"auto")+"\n";
     auto identity=hex_bytes(digest(Algorithm::Sha256,bytes(configuration)));
     Matches matches; std::uint64_t committed=c.skip;
     std::unique_ptr<Snapshot> session,output;
@@ -432,6 +437,7 @@ void recovery_help() {
         <<"  recover --hashes FILE --wordlist WORDS [--wordlist MORE_WORDS]\n"
         <<"  recover --hashes FILE --mask 'prefix?d?d?d?d'\n"
         <<"  recover --hashes FILE --wordlist WORDS --mask '?d?d' [--hybrid append|prepend]\n"
+        <<"  --hashes - reads HC22000 from stdin until EOF (inspect and recover).\n"
         <<"Candidate options: --mask (repeatable), --mask-file FILE (repeatable),\n"
         <<"  --charset1 SET .. --charset4 SET, --hex-wordlist, --skip N, --limit N (0=unlimited).\n"
         <<"Mask tokens: ?l ?u ?d ?s ?a ?b ?h ?H ?1..?4; ?? is literal ?.\n"
@@ -447,8 +453,19 @@ void recovery_help() {
 }
 int recovery_cli(int argc,char** argv) {
     if(argc==3 && std::string(argv[2])=="--help") { recovery_help(); return 0; }
-    auto c=parse(argc,argv); Input file(absolute_path(c.hashes)); std::size_t duplicates=0;
-    auto records=read_records(file,duplicates);
+    auto c=parse(argc,argv); std::size_t duplicates=0;
+    std::unique_ptr<Input> file; std::string stdin_hash;
+    std::vector<Record> records;
+    if(c.hashes=="-") {
+#ifdef _WIN32
+        // Preserve CRLF and Ctrl+Z bytes for validation and session identity.
+        if(_setmode(_fileno(stdin),_O_BINARY)==-1) throw std::runtime_error("Cannot set stdin binary mode");
+#endif
+        records=read_records(std::cin,duplicates,stdin_hash);
+    } else {
+        file=std::make_unique<Input>(absolute_path(c.hashes));
+        records=read_records(*file,duplicates);
+    }
     for(auto& r:records) r.prepare(c.corrections);
     if(c.command=="inspect") {
         std::cout<<"records="<<records.size()<<" duplicates="<<duplicates<<'\n';
@@ -456,6 +473,6 @@ int recovery_cli(int argc,char** argv) {
             <<" ssid="<<json_string(display(r.ssid))<<" ssid_hex="<<hex_bytes(r.ssid)<<" bssid="<<hex_bytes(r.ap)<<" nonce_variants="<<r.contexts.size()<<'\n';
         return 0;
     }
-    return recover(c,records,file,duplicates);
+    return recover(c,records,file.get(),stdin_hash,duplicates);
 }
 }

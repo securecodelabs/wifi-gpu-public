@@ -1,7 +1,7 @@
 # wifi-gpu
 
 A Windows and Linux command-line tool for recovering passwords from HC22000
-records, with HIP, OpenCL, Vulkan, and CPU backends. Version **0.16.0**.
+records, with HIP, OpenCL, Vulkan, and CPU backends. Version **0.17.0**.
 Use it with networks and data you own or have permission to audit.
 
 The engine supports streamed wordlists, masks, hybrid wordlist/mask searches,
@@ -9,6 +9,22 @@ multiple records and SSIDs, JSON results, progress, checkpoints, and resume.
 Every reported match is independently re-derived and verified on the CPU.
 It consumes HC22000 directly; capturing traffic and converting PCAP files are
 outside this project's scope. No container or Hashcat installation is required.
+
+## Pipe captures from wifi-cap2hashcat
+
+Version 0.17.0 accepts HC22000 directly from stdin, allowing the converter and
+recovery engine to cooperate without an intermediate hash file:
+
+```sh
+wifi-cap2hashcat capture.pcapng | wifi-gpu recover --hashes - --backend opencl --wordlist words.txt
+```
+
+Use `--backend vulkan` for Vulkan or `--cpu` for CPU recovery. The stream is
+validated with the same limits as a hash file, and session resume requires
+identical input bytes. See [Windows, Linux and synthetic pipe examples](docs/pipeline.md)
+for inspection, reports, checkpoint/resume and backend requirements.
+
+## Earlier releases
 
 Version 0.16 tunes OpenCL on AMD gfx1200: repeated complete synthetic jobs
 measured **655.8 kH/s for masks** and **654.0 kH/s for wordlists**, gains of
