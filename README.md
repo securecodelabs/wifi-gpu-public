@@ -1,7 +1,7 @@
 # wifi-gpu
 
 A Windows and Linux command-line tool for recovering passwords from HC22000
-records, with HIP, OpenCL, Vulkan, and CPU backends. Version **0.17.1**.
+records, with HIP, OpenCL, Vulkan, and CPU backends. Version **0.17.2**.
 Use it with networks and data you own or have permission to audit.
 
 The engine supports streamed wordlists, masks, hybrid wordlist/mask searches,
@@ -9,6 +9,11 @@ multiple records and SSIDs, JSON results, progress, checkpoints, and resume.
 Every reported match is independently re-derived and verified on the CPU.
 It consumes HC22000 directly; capturing traffic and converting PCAP files are
 outside this project's scope. No container or Hashcat installation is required.
+
+Version 0.17.2 is a maintenance release with updated build tools and an updated
+Ubuntu 26.04 container base. Progress calculations use smaller helpers while
+preserving their estimates, limits, and resume behavior, with additional tests
+for tied budgets and invalid elapsed times.
 
 ## Pipe captures from wifi-cap2hashcat
 
