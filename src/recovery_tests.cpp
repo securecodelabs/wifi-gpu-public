@@ -4,6 +4,7 @@
 #include "gpu_backend.hpp"
 #include "progress.hpp"
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 namespace wifi {
 unsigned recovery_unit_tests() {
@@ -48,6 +49,20 @@ unsigned recovery_unit_tests() {
     check(p.fraction==1 && p.eta_seconds==0,"completed budgets clamp safely");
     check(p.search_eta_seconds==0 && p.runtime_remaining_seconds==0 && p.candidate_limit_eta_seconds==0,
           "all completed timers clamp to zero");
+    p=search_progress(50,0,50,5,100,10,100);
+    check(p.fraction==0.5 && p.progress_basis=="search" && p.eta_seconds==5 && p.eta_basis=="search",
+          "equal budgets retain search precedence");
+    check(p.search_eta_seconds==5 && p.runtime_remaining_seconds==5 && p.candidate_limit_eta_seconds==5,
+          "equal budgets retain all independent timers");
+    p=search_progress(5,10,0,2,100,0,100);
+    check(!p.candidates_per_second && !p.eta_seconds && p.fraction==0.05,
+          "offset before resume start does not underflow run progress");
+    for(double elapsed:{-1.0,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}) {
+        p=search_progress(10,0,10,elapsed,100,20,100,123);
+        check(p.run_started_at_ms==123 && p.elapsed_seconds==0 && !p.candidates_per_second &&
+              !p.search_eta_seconds && !p.candidate_limit_eta_seconds && p.runtime_remaining_seconds==20,
+              "invalid elapsed time preserves startup estimates and timestamp");
+    }
     check(hex_bytes(digest(Algorithm::Sha256,bytes("abc")))=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","SHA256 known answer");
     check(hex_bytes(digest(Algorithm::HmacSha1,bytes("Hi There"),Bytes(20,0x0b)))=="b617318655057264e28bc0b6fb378c8ef146be00","HMAC-SHA1 known answer");
     check(hex_bytes(digest(Algorithm::HmacSha256,bytes("Hi There"),Bytes(20,0x0b)))=="b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7","HMAC-SHA256 known answer");
