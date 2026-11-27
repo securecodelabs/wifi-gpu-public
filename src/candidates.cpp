@@ -40,10 +40,9 @@ void bom(Bytes& line) {
         throw std::invalid_argument("UTF-16 wordlist/mask file; save it as UTF-8 first");
     if(line.size()>=3 && line[0]==0xef && line[1]==0xbb && line[2]==0xbf) line.erase(line.begin(),line.begin()+3);
 }
-}
-Mask compile_mask(const std::string& text,const std::array<std::string,4>& custom) {
+std::vector<Bytes> mask_positions(const std::string& text,const std::array<std::string,4>& custom) {
     if(text.empty()) throw std::invalid_argument("Empty mask");
-    Mask mask;
+    std::vector<Bytes> positions;
     for(std::size_t i=0;i<text.size();++i) {
         Bytes set;
         if(text[i]=='?') {
@@ -52,11 +51,46 @@ Mask compile_mask(const std::string& text,const std::array<std::string,4>& custo
             else set=builtin(text[i]);
         } else set.push_back(static_cast<std::uint8_t>(text[i]));
         if(set.empty()) throw std::invalid_argument("Mask references an undefined or empty custom charset");
-        if(mask.size>std::numeric_limits<std::uint64_t>::max()/set.size()) throw std::invalid_argument("Mask keyspace exceeds 64-bit indexing; split it into smaller masks");
-        mask.size*=set.size(); mask.positions.push_back(std::move(set));
-        if(mask.positions.size()>63) throw std::invalid_argument("Mask exceeds WPA's 63-byte limit");
+        positions.push_back(std::move(set));
+        if(positions.size()>63) throw std::invalid_argument("Mask exceeds WPA's 63-byte limit");
+    }
+    return positions;
+}
+Mask prefix_mask(const std::vector<Bytes>& positions,std::size_t length) {
+    Mask mask;
+    mask.positions.assign(positions.begin(),positions.begin()+static_cast<std::ptrdiff_t>(length));
+    for(const auto& set:mask.positions) {
+        if(mask.size>std::numeric_limits<std::uint64_t>::max()/set.size())
+            throw std::invalid_argument("Mask keyspace exceeds 64-bit indexing; split it into smaller masks");
+        mask.size*=set.size();
     }
     return mask;
+}
+void validate_increment(const CandidateConfig& c) {
+    if(!c.increment) {
+        if(c.increment_min || c.increment_max) throw std::invalid_argument("Increment bounds require --increment");
+        return;
+    }
+    if(c.masks.empty() && c.mask_files.empty()) throw std::invalid_argument("--increment requires a mask or mask file");
+    const std::size_t floor=c.wordlists.empty()?8:1;
+    const auto minimum=c.increment_min.value_or(floor),maximum=c.increment_max.value_or(63);
+    if(minimum<floor || maximum>63 || minimum>maximum)
+        throw std::invalid_argument("Increment range must be ordered within 8..63 mask bytes (1..63 for hybrids)");
+}
+std::vector<Mask> candidate_masks(const std::string& text,const CandidateConfig& c) {
+    const auto positions=mask_positions(text,c.custom);
+    if(!c.increment) return {prefix_mask(positions,positions.size())};
+    const auto minimum=c.increment_min.value_or(c.wordlists.empty()?8:1);
+    const auto maximum=std::min(c.increment_max.value_or(positions.size()),positions.size());
+    if(minimum>maximum) throw std::invalid_argument("Mask is shorter than --increment-min");
+    std::vector<Mask> masks;
+    for(auto length=minimum;length<=maximum;++length) masks.push_back(prefix_mask(positions,length));
+    return masks;
+}
+}
+Mask compile_mask(const std::string& text,const std::array<std::string,4>& custom) {
+    const auto positions=mask_positions(text,custom);
+    return prefix_mask(positions,positions.size());
 }
 Bytes Mask::at(std::uint64_t index) const {
     if(index>=size) throw std::out_of_range("Mask index outside keyspace");
@@ -98,12 +132,14 @@ struct Candidates::Impl {
     }
     explicit Impl(const CandidateConfig& c,const Scan& scan):config(c) {
         if(c.hybrid!="append" && c.hybrid!="prepend") throw std::invalid_argument("--hybrid must be append or prepend");
+        validate_increment(c);
         auto add=[&](const std::string& text) {
-            auto m=compile_mask(text,c.custom);
-            if(c.wordlists.empty() && m.positions.size()<8) throw std::invalid_argument("A standalone WPA mask must contain at least eight bytes");
-            if(mask_count>std::numeric_limits<std::uint64_t>::max()-m.size) throw std::invalid_argument("Combined mask keyspace exceeds 64-bit indexing");
-            mask_count+=m.size; masks.push_back(std::move(m));
-            if(masks.size()>10000) throw std::invalid_argument("Too many masks (limit 10000)");
+            for(auto& m:candidate_masks(text,c)) {
+                if(c.wordlists.empty() && m.positions.size()<8) throw std::invalid_argument("A standalone WPA mask must contain at least eight bytes");
+                if(mask_count>std::numeric_limits<std::uint64_t>::max()-m.size) throw std::invalid_argument("Combined mask keyspace exceeds 64-bit indexing");
+                mask_count+=m.size; masks.push_back(std::move(m));
+                if(masks.size()>10000) throw std::invalid_argument("Too many expanded masks (limit 10000)");
+            }
         };
         for(const auto& text:c.masks) add(text);
         for(const auto& path:c.mask_files) {

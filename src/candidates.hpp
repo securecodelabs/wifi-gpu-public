@@ -14,6 +14,8 @@ struct CandidateConfig {
     std::vector<std::string> wordlists,masks,mask_files;
     std::array<std::string,4> custom{};
     bool hexadecimal=false;
+    bool increment=false;
+    std::optional<std::size_t> increment_min,increment_max;
     std::string hybrid="append";
 };
 class Candidates {
