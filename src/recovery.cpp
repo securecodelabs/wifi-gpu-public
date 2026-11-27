@@ -80,6 +80,7 @@ bool parse_flag(Config& c,std::string_view key) {
     if(key=="--activity-json") { c.activity_json=true; return true; }
     if(key=="--overwrite") { c.overwrite=true; return true; }
     if(key=="--hex-wordlist") { c.candidates.hexadecimal=true; return true; }
+    if(key=="--increment") { c.candidates.increment=true; return true; }
     return false;
 }
 void parse_number(Config& c,const std::string& key,const std::string& value) {
@@ -112,6 +113,8 @@ void parse_value(Config& c,const std::string& key,const std::string& value) {
     else if(key=="--wordlist") c.candidates.wordlists.push_back(value);
     else if(key=="--mask") c.candidates.masks.push_back(value);
     else if(key=="--mask-file") c.candidates.mask_files.push_back(value);
+    else if(key=="--increment-min") c.candidates.increment_min=static_cast<std::size_t>(unsigned_number(value));
+    else if(key=="--increment-max") c.candidates.increment_max=static_cast<std::size_t>(unsigned_number(value));
     else if(key=="--hybrid") c.candidates.hybrid=value;
     else if(key=="--charset1" || key=="--charset2" || key=="--charset3" || key=="--charset4") c.candidates.custom[static_cast<unsigned>(key.back()-'1')]=value;
     else if(key=="--device") c.device=static_cast<std::size_t>(unsigned_number(value));
@@ -632,6 +635,8 @@ void recovery_help() {
         <<"  recover --hashes FILE --wordlist WORDS --mask '?d?d' [--hybrid append|prepend]\n"
         <<"  --hashes - reads HC22000 from stdin until EOF (inspect and recover).\n"
         <<"Candidate options: --mask (repeatable), --mask-file FILE (repeatable),\n"
+        <<"  --increment [--increment-min N] [--increment-max N]: ascending mask prefixes;\n"
+        <<"  lengths are bytes, default min 8 (hybrid mask: 1), max the supplied mask length.\n"
         <<"  --charset1 SET .. --charset4 SET, --hex-wordlist, --skip N, --limit N (0=unlimited).\n"
         <<"Mask tokens: ?l ?u ?d ?s ?a ?b ?h ?H ?1..?4; ?? is literal ?.\n"
         <<"Session/output: --output results.json, --session run.session,\n"

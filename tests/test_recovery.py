@@ -168,6 +168,27 @@ def main():
         recover(one, ['--mask', 'labpass?d?d', '--skip', '100'], 2)
         recover(one, ['--mask', 'labpass?d?d', '--skip', '101'], 1)
 
+        # A single checkpoint spans shorter and longer masks in ascending order.
+        incremental = ['--mask', 'labpass?d?d', '--increment', '--increment-min', '8', '--increment-max', '9']
+        incremental_session = root/'increment.session'
+        incremental_output = root/'increment.json'
+        recover(one, [*incremental, '--batch', '8', '--limit', '10', '--session', incremental_session,
+                      '--output', incremental_output], 4)
+        limited = json.loads(incremental_output.read_text())
+        assert limited['total_candidates'] == 110 and limited['next_candidate'] == 10
+        recover(one, [*incremental, '--batch', '8', '--resume', incremental_session,
+                      '--output', incremental_output])
+        assert json.loads(incremental_output.read_text())['matches'][0]['password_hex'] == b'labpass42'.hex()
+        recover(one, ['--mask', 'labpass?d?d', '--increment', '--increment-min', '9',
+                      '--resume', incremental_session], 1)
+        increments_file = put('increments.txt', '# lengths are expanded per mask\nlabpass?d?d\n')
+        recover(one, ['--mask-file', increments_file, '--increment'])
+        recover(one, ['--wordlist', stem, '--mask', '?d?d', '--increment', '--increment-min', '1'])
+        for invalid in (['--increment-min', '8'], ['--increment', '--increment-min', '7'],
+                        ['--increment', '--increment-min', '10'], ['--increment', '--increment-max', '64'],
+                        ['--increment', '--increment-min', '9', '--increment-max', '8']):
+            recover(one, ['--mask', 'labpass?d?d', *invalid], 1)
+
         # File identities and byte-accurate saved matches survive stop/resume.
         session = root/'progress.session'
         resumed_output = root/'resumed.json'

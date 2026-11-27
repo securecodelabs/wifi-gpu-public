@@ -7,8 +7,55 @@
 #include <limits>
 #include <stdexcept>
 namespace wifi {
-unsigned recovery_unit_tests() {
+namespace {
+unsigned incremental_mask_tests() {
     unsigned checks=0;
+    auto check=[&](bool ok) { if(!ok) throw std::runtime_error("Incremental mask self-test failed"); ++checks; };
+    CandidateConfig config;
+    config.masks={"prefix?1?1?1"}; config.custom[0]="01";
+    config.increment=true; config.increment_min=8; config.increment_max=9;
+    Candidates candidates(config); Bytes value;
+    check(candidates.keyspace()==12 && candidates.valid_total()==12);
+    const std::vector<std::string> expected={"prefix00","prefix01","prefix10","prefix11",
+        "prefix000","prefix001","prefix010","prefix011","prefix100","prefix101","prefix110","prefix111"};
+    for(const auto& word:expected) check(candidates.next(value) && value==bytes(word));
+    check(!candidates.next(value));
+    for(std::size_t index=0;index<expected.size();++index) {
+        candidates.seek(index); check(candidates.valid_position()==index);
+        check(candidates.next(value) && value==bytes(expected[index]));
+    }
+    CandidateConfig manual;
+    manual.masks={"prefix?1?1","prefix?1?1?1"}; manual.custom=config.custom;
+    check(Candidates(manual).identity()==candidates.identity());
+    config.increment_max=63;
+    check(Candidates(config).identity()==candidates.identity());
+    config.increment_min=9;
+    check(Candidates(config).identity()!=candidates.identity());
+    config.masks={"abcdefg\xc3\xa9?d"}; config.increment_min=8; config.increment_max=10;
+    Candidates unicode(config);
+    check(unicode.keyspace()==12);
+    check(unicode.next(value) && value==bytes("abcdefg\xc3"));
+    config.masks={"?d?d?d?d?d?d?d?d?d?d?d?d?d?d?d?d?d?d?d?d"};
+    config.increment_max=19;
+    check(Candidates(config).keyspace()==11111111111100000000ULL);
+    auto reject=[&](const CandidateConfig& invalid) {
+        bool rejected=false;
+        try { Candidates unused(invalid); } catch(const std::invalid_argument&) { rejected=true; }
+        check(rejected);
+    };
+    config.increment_max=20; reject(config);
+    config.masks={"password"}; config.increment_min=9; config.increment_max=8; reject(config);
+    config.increment_max=10; reject(config);
+    config.increment_min=7; reject(config);
+    config.increment_min=8; config.increment_max=64; reject(config);
+    config.increment_max=8; config.increment=false; reject(config);
+    config.increment=true; config.masks.clear(); reject(config);
+    config.masks={std::string(64,'x')}; reject(config);
+    return checks;
+}
+}
+unsigned recovery_unit_tests() {
+    unsigned checks=incremental_mask_tests();
     auto check=[&](bool ok,const char* label) { if(!ok) throw std::runtime_error(std::string("Recovery self-test failed: ")+label); ++checks; };
     auto reject=[&](auto fn,const char* label) {
         bool rejected=false;
